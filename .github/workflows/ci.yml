@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Typecheck, lint, test, coverage
+    runs-on: ubuntu-latest
+    steps:
+      # This plugin depends on unpublished `@deepseek-ai/dsh-*` packages, so it
+      # builds and tests inside a pinned deepseek-harness checkout: the plugin
+      # is checked out directly into `packages/llm/llm-siliconflow`, where its
+      # tsconfig references and `workspace:^` dependencies resolve.
+      - name: Checkout deepseek-harness
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: 47f943859bef60e4160492346772ded9b24f765a
+          path: harness
+
+      - name: Checkout plugin into the harness workspace
+        uses: actions/checkout@v4
+        with:
+          path: harness/packages/llm/llm-siliconflow
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: harness/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: harness
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck
+        working-directory: harness
+        run: pnpm exec tsc -b packages/llm/llm-siliconflow/tsconfig.json
+
+      - name: Lint
+        working-directory: harness
+        run: pnpm exec oxlint packages/llm/llm-siliconflow
+
+      - name: Test with coverage
+        working-directory: harness
+        run: pnpm exec vitest run --coverage packages/llm/llm-siliconflow/tests
