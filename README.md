@@ -14,13 +14,17 @@
 dsh plugin --profile <name> add @siliconflow/dsh-llm-siliconflow
 ```
 
-该命令由 `dsh plugin` 转发给 pnpm，把本包装进 profile 并把它声明的 bundle patch（`cordis.patch.yml`，自动挂载 `siliconflow` 路由）合并进 `dsh.profile.bundles`。装完后填一个 key 即可使用：
+该命令由 `dsh plugin` 转发给 pnpm，把本包装进 profile 并把它声明的 bundle patch（`cordis.patch.yml`，自动挂载 `siliconflow` 路由）合并进 `dsh.profile.bundles`。`@deepseek-ai/dsh-*` 以 peerDependencies 声明，由 harness 安装闭包在运行时提供，无需重复打包。装完后填一个 key 即可使用：
 
 ```sh
 export SILICONFLOW_API_KEY=sk-...   # 或写入 $DSH_HOME/.credentials.yaml
 ```
 
-在包发布到 npm 之前，也可以从 Git 安装：`dsh plugin --profile <name> add github:siliconflow/dsh-llm-siliconflow`。`@deepseek-ai/dsh-*` 以 peerDependencies 声明，由 harness 安装闭包在运行时提供；本包只在固定的 DeepSeek Harness 检出内做构建与测试（见 `.github/workflows/ci.yml`），因此无需重复打包这些依赖。
+在包发布到 npm 之前，先用 `pnpm install && pnpm build` 构建出 `lib/`，再从本地路径安装：
+
+```sh
+dsh plugin --profile <name> add /path/to/dsh-llm-siliconflow
+```
 
 本代码派生自 MIT 许可的 DeepSeek Harness `llm-deepseek` 适配器；见 [LICENSE](LICENSE)。
 
