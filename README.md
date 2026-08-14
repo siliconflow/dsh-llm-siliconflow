@@ -1,26 +1,30 @@
 # @siliconflow/dsh-llm-siliconflow
 
-English | [中文](README.zh.md)
+面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) LLM 接缝的 SiliconFlow chat-completions 适配器插件：用直接 `fetch` + SSE（由 `eventsource-parser` 分帧）把 SiliconFlow 的 OpenAI 兼容线上格式翻译成 `StreamChunk` 协议。SiliconFlow 托管着广泛的开源模型目录，其中包含 delta 携带 `reasoning_content` 的推理模型（DeepSeek-R1、QwQ、Kimi-K2-Thinking）——适配器把该通道翻译成 harness reasoning 块，并在工具调用轮次按这些模型的要求将其回传。
 
-SiliconFlow chat-completions adapter plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) LLM seam: direct `fetch` + SSE (framed by `eventsource-parser`) translating SiliconFlow's OpenAI-compatible wire format into the `StreamChunk` protocol. SiliconFlow hosts a broad catalog of open models, including reasoning models whose deltas carry `reasoning_content` (DeepSeek-R1, QwQ, Kimi-K2-Thinking) — the adapter translates that channel into harness reasoning blocks and passes it back on tool-call turns as those models require.
+本包拥有 `siliconflow` 提供方路由，因此部署只需提供一个 SiliconFlow API key 即可使用。其模型选择器从实时 `GET /models?sub_type=chat` 列表按端点顺序填充；配置的 `models` 列表是在没有 key 或发现失败时展示的回退目录。这是一个纯 OpenAI 兼容端点，没有 `thinking`/`reasoning_effort` 开关，因此适配器不暴露任何推理档位元数据、也不序列化任何推理档位字段：推理模型通过其目录 id 选择，请求上显式指定 `reasoningEffort` 会在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 被拒绝。为 `siliconflow` 注册另一个适配器会抛出 `LlmError('DUPLICATE_ADAPTER')`。
 
-The package owns the `siliconflow` provider route, so a deployment only has to supply a SiliconFlow API key to use it. Its model picker fills from the live `GET /models?sub_type=chat` listing in endpoint order; the configured `models` list is the fallback shown while no key is available or discovery fails. It is a plain OpenAI-compatible endpoint with no `thinking`/`reasoning_effort` toggles, so the adapter exposes no reasoning-effort metadata and serializes none: a reasoning model is selected by its catalog id, and an explicit `reasoningEffort` on a request is refused with `UNSUPPORTED_REASONING_EFFORT` before network I/O. Registering another adapter for `siliconflow` throws `LlmError('DUPLICATE_ADAPTER')`.
+包根导出 Cordis 插件契约与 `SiliconFlowAdapter`；线上序列化、SSE 解析、chunk 翻译与发现辅助函数不属于该根契约。
 
-The package root exposes the Cordis plugin contract and `SiliconFlowAdapter`; wire serialization, SSE parsing, chunk translation, and discovery helpers are not part of that root contract.
+## 安装
 
-## Install
+一行命令装进任意 profile：
 
-The `@deepseek-ai/dsh-*` dependencies are not yet published, so this package builds and tests inside a pinned DeepSeek Harness checkout — the CI workflow checks it out into `packages/llm/llm-siliconflow` and runs the harness's gates. Once those dependencies publish, install it into a profile with `dsh plugin --profile <name> add @siliconflow/dsh-llm-siliconflow`, or mount it directly in a `cordis.patch.yml` layer:
-
-```yaml
-- insert:
-    - id: llm-siliconflow
-      name: '@siliconflow/dsh-llm-siliconflow'
+```sh
+dsh plugin --profile <name> add @siliconflow/dsh-llm-siliconflow
 ```
 
-This code is derived from the MIT-licensed DeepSeek Harness `llm-deepseek` adapter; see [LICENSE](LICENSE).
+该命令由 `dsh plugin` 转发给 pnpm，把本包装进 profile 并把它声明的 bundle patch（`cordis.patch.yml`，自动挂载 `siliconflow` 路由）合并进 `dsh.profile.bundles`。装完后填一个 key 即可使用：
 
-## Config
+```sh
+export SILICONFLOW_API_KEY=sk-...   # 或写入 $DSH_HOME/.credentials.yaml
+```
+
+在包发布到 npm 之前，也可以从 Git 安装：`dsh plugin --profile <name> add github:siliconflow/dsh-llm-siliconflow`。`@deepseek-ai/dsh-*` 以 peerDependencies 声明，由 harness 安装闭包在运行时提供；本包只在固定的 DeepSeek Harness 检出内做构建与测试（见 `.github/workflows/ci.yml`），因此无需重复打包这些依赖。
+
+本代码派生自 MIT 许可的 DeepSeek Harness `llm-deepseek` 适配器；见 [LICENSE](LICENSE)。
+
+## 配置
 
 ```yaml
 - id: llm-siliconflow
@@ -42,81 +46,81 @@ This code is derived from the MIT-licensed DeepSeek Harness `llm-deepseek` adapt
       - id: deepseek-ai/DeepSeek-V4-Flash
 ```
 
-The plugin registers the single provider route `siliconflow` together with its resolved `retryPolicy`. A request selects it with `provider: siliconflow`; its `model` is passed through as the wire `model` string, so changing SiliconFlow models does not require lifecycle-time registration. The wire model id is SiliconFlow's `org/model` spelling (`deepseek-ai/DeepSeek-V4-Flash`), never a short alias. Omitting `models` keeps a small fallback catalog of six currently hosted chat models; an explicit list replaces those defaults, while `models: []` advertises none. Catalog entries are exposed through `ctx.llm.listModels('siliconflow')` for clients such as ACP editors and the Web selector, but remain advisory: unlisted model ids still pass through unchanged. An omitted entry name defaults to its id.
+插件把单个提供方路由 `siliconflow` 连同其已解析的 `retryPolicy` 一并注册。请求用 `provider: siliconflow` 选中它；其 `model` 原样作为线上 `model` 字符串透传，因此更换 SiliconFlow 模型不需要生命周期级重新注册。线上模型 id 是 SiliconFlow 的 `org/model` 写法（如 `deepseek-ai/DeepSeek-V4-Flash`），绝不是短别名。省略 `models` 时保留一份由六个当前托管对话模型组成的小回退目录；显式列表会替换这些默认值，而 `models: []` 则一个都不通告。目录条目通过 `ctx.llm.listModels('siliconflow')` 暴露给 ACP 编辑器与 Web 选择器这类客户端，但始终是建议性的：未列出的模型 id 依然原样透传。省略的条目名默认等于其 id。
 
-`contextWindow` is optional per configured model. `ctx.llm.resolveModelInfo('siliconflow', model).context` returns an exact value first — from the configured entry or a warm discovery cache — then `defaultContextWindow` for a model nothing sized. The adapter default is 32,768; SiliconFlow's catalog spans roughly 8k to 128k+ contexts, so a discovered listing that discloses a context window is the authoritative value, and the fallback is what remains when nothing disclosed one. Pressure-sensitive plugins get deployment-owned capacity without treating the model selector as authoritative.
+`contextWindow` 按模型可选。`ctx.llm.resolveModelInfo('siliconflow', model).context` 先返回精确值——来自配置条目或温热的发现缓存——再对未被任何来源定容的模型回退到 `defaultContextWindow`。适配器默认值是 32,768；SiliconFlow 目录大致横跨 8k 到 128k+ 上下文，因此披露了上下文的发现列表是权威值，回退值仅在没有任何来源披露时使用。对压力敏感的插件由此获得部署自有的容量，而不把模型选择器当作权威。
 
-`maxTokens` is the adapter-configured output cap for conversation requests and defaults to 8,192. A catalog entry may carry its own `maxTokens`, which wins for that model; an entry without one, and any unlisted pass-through id, resolve to the profile value. Exact-model resolution exposes the winner as `defaultMaxTokens`; `LlmRuntime` materializes that value into `GenerateOptions.maxTokens` before the agent loop writes `request/header`, so the wire request remains reconstructable. An explicit request or `AgentOptions.maxTokens` value wins and is serialized as `max_tokens`. The adapter does not clamp this request budget against `contextWindow`; deployments with a smaller context or provider output limit must configure a compatible `maxTokens`.
+`maxTokens` 是对话请求的适配器级输出上限，默认 8,192。目录条目可携带自己的 `maxTokens`，对该模型优先生效；没有该字段的条目以及任何未列出的透传 id 解析为配置值。精确模型解析把胜出者暴露为 `defaultMaxTokens`；`LlmRuntime` 在 agent 循环写 `request/header` 之前把该值物化进 `GenerateOptions.maxTokens`，因此线上请求可重建。显式请求或 `AgentOptions.maxTokens` 值优先，并被序列化为 `max_tokens`。适配器不会把该请求预算对照 `contextWindow` 裁剪；上下文更小或有提供方输出限制的部署必须配置兼容的 `maxTokens`。
 
-`streamIdleTimeoutMs` bounds each outstanding provider read, including the initial `fetch`, without counting time the consumer spends between chunks. SSE comments rearm an outstanding read as transport activity but never become `StreamChunk` values or session-log events. One stable abort signal reaches the request and body reader for the whole call; expiry stops the transport and throws `LlmError('TIMEOUT')`, while an earlier caller abort throws `LlmError('ABORTED')`. The adapter makes exactly one provider request per `stream()` call; it registers the configured policy as provider metadata, and `dsh-llm-retry` separately executes it at durable agent-step boundaries.
+`streamIdleTimeoutMs` 约束每次未完成的提供方读取（包括首次 `fetch`），不计消费者在 chunk 之间花费的时间。SSE 注释会为未完成的读取重新计时作为传输活动，但永远不会成为 `StreamChunk` 值或会话日志事件。一次调用全程只有一个稳定的中止信号同时到达请求与响应体读取器；超时会停止传输并抛出 `LlmError('TIMEOUT')`，而更早的调用方中止抛出 `LlmError('ABORTED')`。适配器每次 `stream()` 调用只发一次提供方请求；它把配置的策略注册为提供方元数据，`dsh-llm-retry` 再在持久化的 agent 步骤边界单独执行它。
 
-## Dynamic model discovery
+## 动态模型发现
 
-`listModels` advertises the live chat listing, not a hand-maintained snapshot: it interrogates `GET {baseURL}/models?sub_type=chat` with the resolved key, keeps the reply in **endpoint order**, and caches it for five minutes. Discovery is advisory and best-effort — a missing key, an unreachable endpoint, a refused credential, or an unreadable reply all fall back to the configured `models` list rather than breaking the picker, because an empty catalog would hide the provider entirely. A successful listing also feeds exact-model resolution: a model the static catalog does not name still gets the context window and output cap its listing disclosed.
+`listModels` 通告实时对话列表而非手工维护的快照：它用已解析的 key 询问 `GET {baseURL}/models?sub_type=chat`，按**端点顺序**保留回复，并缓存五分钟。发现是建议性的、尽力而为的——缺少 key、端点不可达、凭据被拒、或回复不可读，都会回退到配置的 `models` 列表而非破坏选择器，因为空目录会整个隐藏该提供方。成功的列表同样服务于精确模型解析：静态目录未命名的模型仍能得到其列表披露的上下文窗口与输出上限。
 
-The config surface's "fetch available models" action uses the same interrogation through `ctx.llm.discoverModels('llm-siliconflow', …)`: a key typed into the form wins, otherwise the stored credential or the ambient environment is probed, and a route with no key is probed unauthenticated so the surface can still answer "what does this endpoint serve".
+配置面的「获取可用模型」动作通过 `ctx.llm.discoverModels('llm-siliconflow', …)` 使用同一询问：表单里输入的 key 优先，否则探测已存凭据或环境变量；没有 key 的路由以未认证方式探测，因此配置面仍能回答「这个端点服务哪些模型」。
 
-## Dynamic configuration (settings + credentials)
+## 动态配置（settings + credentials）
 
-Connection facts are not frozen at load. `resolveAdapterOptions` is the one explicit resolve step from raw config to validated facts, and the adapter re-reads them through a thunk **once per operation**: base URL, catalog, request defaults, and idle budget all take effect on the next request, while an in-flight stream keeps the facts it started with. Two optional seams feed that thunk:
+连接事实不在加载时冻结。`resolveAdapterOptions` 是从原始配置到已校验事实的唯一显式解析步骤，适配器通过 thunk **每个操作一次** 重读它们：base URL、目录、请求默认值与空闲预算都在下一个请求生效，而进行中的流保留其启动时的事实。两个可选接缝为该 thunk 供料：
 
-- **`ctx.settings`** — the plugin registers the `llm-siliconflow` namespace with this same `Config` schema and its `cordis.yml` entry as the composition `base`, so a `llm-siliconflow:` section in the user settings document overrides any field without a restart. Without a mounted settings service the entry config alone drives the adapter, unchanged. A live settings snapshot that passes the schema but fails a beyond-schema bound (a duplicate catalog id) keeps the last good facts and logs the failure; the entry config itself still fails plugin load.
-- **`ctx.credentials`** — the API key resolves per stream call, from the *same* resolved snapshot that supplies the endpoint. Configuration carries only `apiKeyEnv`, never a literal key: the reference resolves through the credential seam, and without a mounted seam through the trusted environment layers. Because credential facts travel with the connection facts, a settings snapshot the resolver rejects contributes neither its endpoint nor its key. Every resolved key is format-checked before use, so a value no HTTP header can carry is refused with `LlmError('INVALID_CREDENTIAL')` naming the failing entry point — never any part of the key. A request with no key anywhere fails with `MISSING_CREDENTIAL` naming every configuration entry point, while the route stays registered and the catalog stays browsable.
+- **`ctx.settings`** —— 插件用同样的 `Config` schema 注册 `llm-siliconflow` 命名空间，并把其 `cordis.yml` 条目作为组合 `base`，因此用户设置文档中的 `llm-siliconflow:` 段可以在不重启的情况下覆盖任意字段。未挂载 settings 服务时仅由条目配置驱动适配器，行为不变。一个通过 schema 但越过 schema 之外界限（如重复目录 id）的实时设置快照会保留最后的好事实并记录失败；条目配置本身仍会在插件加载时失败。
+- **`ctx.credentials`** —— API key 每个流调用解析一次，且来自提供端点的 *同一个* 已解析快照。配置只携带 `apiKeyEnv`，绝不携带明文 key：该引用通过凭证接缝解析，未挂载该接缝时通过受信任的环境层解析。由于凭证事实随连接事实一起传递，解析器拒绝的设置快照既不贡献其端点也不贡献其 key。每个解析出的 key 在使用前都做格式检查，因此 HTTP 头无法承载的值会以 `LlmError('INVALID_CREDENTIAL')` 被拒绝，并指出失败的入口点——绝不包含 key 的任何部分。任何地方都没有 key 的请求以 `MISSING_CREDENTIAL` 失败，并指出每个配置入口点，而路由保持注册、目录保持可浏览。
 
-The one registration-captured fact is the retry policy: when its resolved value changes, the plugin re-registers the route in place (same adapter instance, one synchronous section), so `ctx.llm.providerRetryPolicy('siliconflow')` always reports the current policy. The plugin also declares its route in the configurable-provider directory (`ctx.llm.listConfigurableProviders()`): provider `siliconflow`, settings namespace `llm-siliconflow`, empty settings path.
+唯一在注册时捕获的事实是重试策略：当其解析值变化时，插件原地重注册路由（同一适配器实例、一个同步区段），因此 `ctx.llm.providerRetryPolicy('siliconflow')` 始终报告当前策略。插件还会在可配置提供方目录（`ctx.llm.listConfigurableProviders()`）中声明其路由：提供方 `siliconflow`，settings 命名空间 `llm-siliconflow`，settings 路径为空。
 
-## App attribution
+## 应用归属
 
-Every request carries the shared attribution header from dsh-llm's `attributionHeaders()` — the mandatory `User-Agent` baseline identifying the harness. After credential resolution, every provider request carries `x-siliconflow-harness-user-id` with the stable anonymous id from `@deepseek-ai/dsh-anonymous-user-id`; a request carrying `GenerateOptions.sessionId` also sends that exact value as `x-siliconflow-harness-session-id`, while a direct call without a session omits the session header. A request whose `GenerateOptions.purpose` is `compaction` additionally carries `x-siliconflow-harness-compact: 1`. All three headers go to the resolved `baseURL` and remain outside the request body and model-visible content.
+每个请求都携带 dsh-llm 的 `attributionHeaders()` 提供的共享归属头——标识 harness 的强制 `User-Agent` 基线。在凭证解析之后，每个提供方请求都携带 `x-siliconflow-harness-user-id`（来自 `@deepseek-ai/dsh-anonymous-user-id` 的稳定匿名 id）；携带 `GenerateOptions.sessionId` 的请求还会把该精确值作为 `x-siliconflow-harness-session-id` 发送，而没有会话的直接调用省略该会话头。`GenerateOptions.purpose` 为 `compaction` 的请求额外携带 `x-siliconflow-harness-compact: 1`。这三个头都发往已解析的 `baseURL`，并保持在请求体与模型可见内容之外。
 
-## Wire-format notes
+## 线上格式说明
 
-- Streaming only (`stream_options.include_usage` always on). `usage` may arrive attached to the finish chunk or as a trailing usage-only chunk — the translator defers both to `[DONE]`, so `usage` always precedes `finish` and nothing follows `finish`.
-- The adapter never sends `thinking` or `reasoning_effort`; SiliconFlow's endpoint has no such knobs, and a reasoning model is chosen by id.
-- The first reasoning-model chunk carries `reasoning_content: ""` — handled (no spurious reasoning block).
-- **Reasoning passback rule**: on assistant turns that carried tool calls, `reasoning_content` is serialized back in history (required by hosted DeepSeek-R1-style models); on tool-call-free turns it is dropped (ignored anyway — saves tokens).
-- Cache accounting: `cacheReadTokens` ← `prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`; SiliconFlow reports no cache-write metric.
+- 仅流式（`stream_options.include_usage` 始终开启）。`usage` 可能附在结束 chunk 上，也可能作为尾随的仅 usage chunk 出现——翻译器把两者都推迟到 `[DONE]`，因此 `usage` 始终先于 `finish`，且 `finish` 之后无内容。
+- 适配器从不发送 `thinking` 或 `reasoning_effort`；SiliconFlow 端点没有这些开关，推理模型通过 id 选择。
+- 推理模型首个 chunk 携带 `reasoning_content: ""` —— 已处理（不会产生多余 reasoning 块）。
+- **推理回传规则**：在携带工具调用的 assistant 轮次，`reasoning_content` 会被序列化回历史（托管的 DeepSeek-R1 类模型所要求）；无工具调用的轮次则丢弃（反正被忽略——省 token）。
+- 缓存记账：`cacheReadTokens` ← `prompt_cache_hit_tokens` / `prompt_tokens_details.cached_tokens`；SiliconFlow 不报告缓存写入指标。
 
-## Errors
+## 错误
 
-Non-2xx responses throw `LlmError` with stable codes: `AUTH` (401/403), `QUOTA` (a response whose provider details identify exhausted quota, balance, or credits), `RATE_LIMIT` (other 429s), `CONTEXT_WINDOW_EXCEEDED` (a 400 whose provider code, type, or message identifies context overflow), `INVALID_REQUEST` (other 400s), `SERVER` (5xx), `HTTP_<status>` otherwise. Its serializable `failure` retains the HTTP status plus a valid positive `Retry-After` seconds/date delay and `x-request-id` when present. A pre-response transport failure (DNS, refused connection, TLS, proxy) throws `TRANSPORT` naming the configured endpoint and chaining the original rejection as `cause`; caller aborts throw `ABORTED`, and the loop's cancellation signal remains authoritative. Protocol violations throw `STREAM_CLOSED` (no `[DONE]`) or `MALFORMED_RESPONSE` (bad JSON payload). Unknown wire `finish_reason`s (e.g. `content_filter`, `insufficient_system_resource`) become `finish {kind: 'error', failure}` chunks, and a completed stream whose `stop` (or absent) finish opened no content blocks becomes a `finish {kind: 'error'}` with code `EMPTY_RESPONSE` (retried by default policy).
+非 2xx 响应抛出带稳定码的 `LlmError`：`AUTH`（401/403）、`QUOTA`（提供方详情指明配额、余额或额度耗尽的响应）、`RATE_LIMIT`（其他 429）、`CONTEXT_WINDOW_EXCEEDED`（400 且其提供方 code、type 或 message 指明上下文溢出）、`INVALID_REQUEST`（其他 400）、`SERVER`（5xx）、其余 `HTTP_<status>`。其可序列化的 `failure` 保留 HTTP 状态，以及存在时的有效正 `Retry-After` 秒数/日期延迟和 `x-request-id`。响应前的传输失败（DNS、连接拒绝、TLS、代理）抛出 `TRANSPORT`，指明已配置端点并把原始拒绝链为 `cause`；调用方中止抛出 `ABORTED`，循环的取消信号保持权威。协议违规抛出 `STREAM_CLOSED`（无 `[DONE]`）或 `MALFORMED_RESPONSE`（坏 JSON payload）。未知的线上 `finish_reason`（如 `content_filter`、`insufficient_system_resource`）变为 `finish {kind: 'error', failure}` chunk；一个 `stop`（或缺省）结束但未打开任何内容块的已完成流变为 `finish {kind: 'error'}`，码为 `EMPTY_RESPONSE`（默认策略会重试）。
 
 ## Model Experience
 
-### SiliconFlow request
+### SiliconFlow 请求
 
-#### What the model sees
+#### 模型看到什么
 
-The selected SiliconFlow model receives the harness system prompt, message history, tool schemas, stop sequences, and call config without adapter-authored prompt prose. On a prior assistant turn with tool calls, its reasoning content is passed back as required; reasoning from tool-call-free turns is omitted.
+选中的 SiliconFlow 模型收到 harness 系统提示、消息历史、工具 schema、停止序列与调用配置，不含适配器编写的提示文本。在先前携带工具调用的 assistant 轮次，其推理内容按要求回传；无工具调用轮次的推理被省略。
 
-#### Token effect
+#### Token 影响
 
-Provider tokenization governs exact input. Conditional reasoning passback increases tool-round-trip context, while dropping other reasoning avoids paying those tokens again; cache-read usage is reported when available.
+提供方分词决定精确输入。条件性推理回传增加工具往返上下文，而丢弃其他推理避免重复付费；缓存读取用量在可用时上报。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-An unchanged assembled prefix is eligible for provider cache reuse, which this adapter reports in usage. A model-route change or any upstream prompt, schema, prefix, or history change may prevent reuse from the first changed token; reasoning passback appends during tool round trips.
+未变化的组装前缀有资格被提供方缓存复用，本适配器在用量中上报。模型路由变更或任何上游提示、schema、前缀、历史变更都可能从第一个变化 token 起阻止复用；推理回传在工具往返期间追加。
 
-### SiliconFlow response
+### SiliconFlow 响应
 
-#### What the model sees
+#### 模型看到什么
 
-Reasoning, text, and raw-string tool arguments are translated into harness chunks for the loop to log and assemble.
+推理、文本与原始字符串工具参数被翻译成 harness chunk，供循环记录与组装。
 
-#### Token effect
+#### Token 影响
 
-Generated tokens follow the request's logged `maxTokens`; only loop-retained blocks affect later input.
+生成 token 遵循请求记录的 `maxTokens`；只有循环保留的块影响后续输入。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Loop-retained response blocks append to the next request and preserve its earlier reusable prefix; dropped blocks have no later cache effect. Changing the provider or model selects a different cache domain.
+循环保留的响应块追加到下一个请求并保留其更早的可复用前缀；被丢弃的块没有后续缓存影响。更换提供方或模型会选择不同的缓存域。
 
 ## Known Limitations and Deferred Work
 
-- **The fallback `models` list is hand-maintained** — the six defaults are a small snapshot, shown only while discovery cannot run; the live listing is the authoritative catalog.
-- **Discovery does not cache across a baseURL change** — the cache is keyed by endpoint, so repointing the route re-interrogates on the next `listModels`.
-- **A settings `models` list replaces the composition list wholesale** — settings-layer merging is per-field, and arrays are one field; per-entry catalog merging would need a keyed shape.
-- **`tool_choice` is not mapped** — not part of the core vocabulary (MVP cut, shared with the pi-ai and DeepSeek twins).
-- **Requests use raw `fetch`, not `@cordisjs/plugin-http`** — no shared proxy/interception configuration; adoption is deferred until a second direct-fetch adapter wants it (`TODO(http)`).
-- **Serialization flattens user and tool-result content to text blocks** — plugin-added block types are skipped, and empty tool output crosses the wire as the literal `(no output)`.
-- **Image content is rejected** — the chat-completions wire route here is text-only; a multimodal SiliconFlow route would need its own content serializer.
+- **回退 `models` 列表是手工维护的** —— 六个默认值是一份小快照，仅在发现无法运行时展示；实时列表才是权威目录。
+- **发现不跨 baseURL 变化缓存** —— 缓存按端点键控，因此改指路由会在下一次 `listModels` 重新询问。
+- **settings 的 `models` 列表整体替换组合列表** —— settings 层合并在字段粒度进行，数组是一个字段；按条目合并目录需要键控结构。
+- **未映射 `tool_choice`** —— 不属于核心词汇表（MVP 裁剪，与 pi-ai 和 DeepSeek 双胞胎相同）。
+- **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`** —— 没有共享代理/拦截配置；待有第二个直接 fetch 适配器需要时再采用（`TODO(http)`）。
+- **序列化把 user 与 tool-result 内容扁平化为文本块** —— 插件添加的块类型被跳过，空工具输出以字面 `(no output)` 上线。
+- **图片内容被拒绝** —— 这里的 chat-completions 线上路由仅文本；多模态 SiliconFlow 路由需要自己的内容序列化器。

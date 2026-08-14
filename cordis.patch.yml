@@ -1,0 +1,10 @@
+# @siliconflow/dsh-llm-siliconflow bundle patch: mounts the SiliconFlow LLM
+# adapter into a dsh profile. Install with:
+#   dsh plugin --profile <name> add @siliconflow/dsh-llm-siliconflow
+# The plugin registers the `siliconflow` provider route; supply only
+# SILICONFLOW_API_KEY (or the credential store) and select a siliconflow model.
+- insert:
+    - id: llm-siliconflow
+      # Node-resolvable package name — kept in sync with package.json `name`.
+      # Quoted because `@` opens a reserved indicator in YAML.
+      name: '@siliconflow/dsh-llm-siliconflow'
