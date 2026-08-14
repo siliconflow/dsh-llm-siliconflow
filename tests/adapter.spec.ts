@@ -558,7 +558,7 @@ describe('plugin registration and config', () => {
         provider: 'siliconflow',
         id: MODEL,
         name: MODEL,
-        context: { contextWindow: 32_768 },
+        context: { contextWindow: 1_000_000 },
         defaultMaxTokens: 8_192,
       })
   })

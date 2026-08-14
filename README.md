@@ -52,7 +52,7 @@ dsh plugin --profile <name> add /path/to/dsh-llm-siliconflow
 
 插件把单个提供方路由 `siliconflow` 连同其已解析的 `retryPolicy` 一并注册。请求用 `provider: siliconflow` 选中它；其 `model` 原样作为线上 `model` 字符串透传，因此更换 SiliconFlow 模型不需要生命周期级重新注册。线上模型 id 是 SiliconFlow 的 `org/model` 写法（如 `deepseek-ai/DeepSeek-V4-Flash`），绝不是短别名。省略 `models` 时保留一份由六个当前托管对话模型组成的小回退目录；显式列表会替换这些默认值，而 `models: []` 则一个都不通告。目录条目通过 `ctx.llm.listModels('siliconflow')` 暴露给 ACP 编辑器与 Web 选择器这类客户端，但始终是建议性的：未列出的模型 id 依然原样透传。省略的条目名默认等于其 id。
 
-`contextWindow` 按模型可选。`ctx.llm.resolveModelInfo('siliconflow', model).context` 先返回精确值——来自配置条目或温热的发现缓存——再对未被任何来源定容的模型回退到 `defaultContextWindow`。适配器默认值是 32,768；SiliconFlow 目录大致横跨 8k 到 128k+ 上下文，因此披露了上下文的发现列表是权威值，回退值仅在没有任何来源披露时使用。对压力敏感的插件由此获得部署自有的容量，而不把模型选择器当作权威。
+`contextWindow` 按模型可选。`ctx.llm.resolveModelInfo('siliconflow', model).context` 先返回精确值——来自配置条目或温热的发现缓存——再对未被任何来源定容的模型回退到 `defaultContextWindow`。适配器默认值是 32,768；SiliconFlow 目录大致横跨 8k 到 1M 上下文（GLM-5.2、DeepSeek-V4-Pro/Flash 均支持 1M），因此披露了上下文的发现列表是权威值，回退值仅在没有任何来源披露时使用。对压力敏感的插件由此获得部署自有的容量，而不把模型选择器当作权威。
 
 `maxTokens` 是对话请求的适配器级输出上限，默认 8,192。目录条目可携带自己的 `maxTokens`，对该模型优先生效；没有该字段的条目以及任何未列出的透传 id 解析为配置值。精确模型解析把胜出者暴露为 `defaultMaxTokens`；`LlmRuntime` 在 agent 循环写 `request/header` 之前把该值物化进 `GenerateOptions.maxTokens`，因此线上请求可重建。显式请求或 `AgentOptions.maxTokens` 值优先，并被序列化为 `max_tokens`。适配器不会把该请求预算对照 `contextWindow` 裁剪；上下文更小或有提供方输出限制的部署必须配置兼容的 `maxTokens`。
 
