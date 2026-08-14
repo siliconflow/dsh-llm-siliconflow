@@ -52,4 +52,7 @@ jobs:
 
       - name: Test with coverage
         working-directory: harness
-        run: pnpm exec vitest run --coverage packages/llm/llm-siliconflow/tests
+        # The harness coverage config instruments every `packages/*/*/src` file
+        # and enforces 100% per file, but only this plugin's tests run here.
+        # Scope `include` to the plugin so unrelated packages don't fail the gate.
+        run: pnpm exec vitest run --coverage --coverage.include='packages/llm/llm-siliconflow/src/**/*.ts' packages/llm/llm-siliconflow/tests
