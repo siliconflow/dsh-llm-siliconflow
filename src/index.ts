@@ -51,11 +51,11 @@ const PROVIDER = 'siliconflow'
 
 const DEFAULT_MODELS: SiliconFlowCatalogModel[] = [
   { id: 'zai-org/GLM-5.2', contextWindow: 1_000_000 },
-  { id: 'moonshotai/Kimi-K2.7-Code' },
+  { id: 'moonshotai/Kimi-K2.7-Code', contextWindow: 256_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Pro', contextWindow: 1_000_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Flash', contextWindow: 1_000_000 },
-  { id: 'Pro/moonshotai/Kimi-K2.6' },
-  { id: 'Qwen/Qwen3.5-397B-A17B' },
+  { id: 'Pro/moonshotai/Kimi-K2.6', contextWindow: 256_000 },
+  { id: 'Qwen/Qwen3.5-397B-A17B', contextWindow: 256_000 },
 ]
 
 /**
