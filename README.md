@@ -6,6 +6,8 @@
 
 包根导出 Cordis 插件契约与 `SiliconFlowAdapter`；线上序列化、SSE 解析、chunk 翻译与发现辅助函数不属于该根契约。
 
+本项目由 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 dsh agent 开发完成——实现、单元测试与覆盖率、工程化质量门禁、GitHub 仓库与 CI、文档，均在一个 dsh 会话内完成。
+
 ## 安装
 
 一行命令装进任意 profile：
@@ -37,6 +39,32 @@ dsh plugin --profile <name> add /path/to/dsh-llm-siliconflow
 ```
 
 本代码派生自 MIT 许可的 DeepSeek Harness `llm-deepseek` 适配器；见 [LICENSE](LICENSE)。
+
+## 启动
+
+插件随 profile 挂载，启动方式不影响其可用性——`npx`、本地或全局安装的 `dsh` 都读同一个 `$DSH_HOME`（缺省 `~/.dsh`）下的 profile。
+
+### 用 npx 启动（无需本地安装 dsh）
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @siliconflow/dsh-llm-siliconflow  # 装到 web profile
+npx @siliconflow/dsh-llm-siliconflow                                            # 交互式 setup
+npx @deepseek-ai/dsh web                                                        # 打开 http://127.0.0.1:3080
+```
+
+`npx @siliconflow/dsh-llm-siliconflow` 运行本包唯一 bin（`dsh-siliconflow-setup`），与被装进哪个 profile 无关——setup 只读写 `$DSH_HOME` 下的 credentials 与 settings。
+
+### 后台启动
+
+后台只是进程脱离终端，不影响插件加载；唯一要求是 `dsh-siliconflow-setup` 是交互式向导，须先前台、在有 TTY 的环境跑一次。
+
+```sh
+# web UI 常驻后台（默认 http://127.0.0.1:3080；远程访问需把 host 配成 0.0.0.0）
+nohup npx @deepseek-ai/dsh web > ~/.dsh/web.log 2>&1 &
+
+# headless 后台跑一次性任务
+nohup npx @deepseek-ai/dsh --profile headless "任务" > ~/.dsh/task.log 2>&1 &
+```
 
 ## 配置
 
