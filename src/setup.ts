@@ -95,7 +95,7 @@ export async function readCredential(path: string, keyEnv: string): Promise<stri
     if (isEnoent(error)) return undefined
     throw error
   }
-  const root = parseDocument(text).toJS()
+  const root: unknown = parseDocument(text).toJS()
   const value = (root as Record<string, unknown> | null)?.[keyEnv]
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
@@ -126,7 +126,7 @@ export async function readDefaultModel(path: string): Promise<DefaultModelSelect
     if (isEnoent(error)) return undefined
     throw error
   }
-  const root = parseDocument(text).toJS()
+  const root: unknown = parseDocument(text).toJS()
   const section = (root as Record<string, unknown> | null)?.[DEFAULT_MODEL_NAMESPACE]
   if (section === null || typeof section !== 'object') return undefined
   const provider = (section as Record<string, unknown>).provider
@@ -230,7 +230,9 @@ export async function runSetup(deps: SetupDeps): Promise<void> {
   }
 
   io.log('选择默认模型：')
-  models.forEach((model, index) => io.log(`  ${String(index + 1)}) ${labelOf(model)}`))
+  models.forEach((model, index) => {
+    io.log(`  ${String(index + 1)}) ${labelOf(model)}`)
+  })
 
   let index = 0
   for (;;) {
