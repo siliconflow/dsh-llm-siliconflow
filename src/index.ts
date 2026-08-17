@@ -45,11 +45,13 @@ export const name = 'llm-siliconflow'
 export const inject = ['llm']
 
 const NS = settingsNamespace('llm-siliconflow')
-const DEFAULT_API_KEY_ENV = 'SILICONFLOW_API_KEY'
+/** Credential reference this plugin reads by default, also used by the setup CLI. */
+export const DEFAULT_API_KEY_ENV = 'SILICONFLOW_API_KEY'
 /** The single provider route this plugin owns. */
-const PROVIDER = 'siliconflow'
+export const PROVIDER = 'siliconflow'
 
-const DEFAULT_MODELS: SiliconFlowCatalogModel[] = [
+/** Fallback advisory catalog: six widely hosted chat models, also the setup CLI's discovery fallback. */
+export const DEFAULT_MODELS: SiliconFlowCatalogModel[] = [
   { id: 'zai-org/GLM-5.2', contextWindow: 1_000_000 },
   { id: 'moonshotai/Kimi-K2.7-Code', contextWindow: 256_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Pro', contextWindow: 1_000_000 },

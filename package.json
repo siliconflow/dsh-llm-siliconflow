@@ -12,6 +12,9 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
+  "bin": {
+    "dsh-siliconflow-setup": "./lib/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -24,8 +27,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
+    "lib/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml"
   ],
@@ -52,7 +54,8 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
-    "eventsource-parser": "^3.1.0"
+    "eventsource-parser": "^3.1.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

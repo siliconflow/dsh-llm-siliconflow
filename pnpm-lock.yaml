@@ -14,6 +14,9 @@ importers:
       eventsource-parser:
         specifier: ^3.1.0
         version: 3.1.1
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -524,6 +527,11 @@ packages:
     resolution: {integrity: sha512-zj/ob3UsvJGN0whEAKFp53REA5X66hvffVqoCtVQAakJKnKlH+/PcOfMoFwIG/o4rElqLv/ycAFlx8ZlXUorCg==}
     engines: {node: '>=18.12.0'}
 
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yuku-ast@0.8.7:
     resolution: {integrity: sha512-h6+4bDfyootiMB9vckk5uKo5r5j0GHrkr17FQTDNfEsFT3DWlN9uu1HJwQwc64pgmLCI945fWM3lbTIqxjT3GQ==}
 
@@ -847,6 +855,8 @@ snapshots:
   undici-types@6.21.0: {}
 
   verkit@0.3.2: {}
+
+  yaml@2.9.0: {}
 
   yuku-ast@0.8.7:
     dependencies:

@@ -14,7 +14,17 @@
 dsh plugin --profile <name> add @siliconflow/dsh-llm-siliconflow
 ```
 
-该命令由 `dsh plugin` 转发给 pnpm，把本包装进 profile 并把它声明的 bundle patch（`cordis.patch.yml`，自动挂载 `siliconflow` 路由）合并进 `dsh.profile.bundles`。`@deepseek-ai/dsh-*` 以 peerDependencies 声明，由 harness 安装闭包在运行时提供，无需重复打包。装完后填一个 key 即可使用：
+该命令由 `dsh plugin` 转发给 pnpm，把本包装进 profile 并把它声明的 bundle patch（`cordis.patch.yml`，自动挂载 `siliconflow` 路由）合并进 `dsh.profile.bundles`。`@deepseek-ai/dsh-*` 以 peerDependencies 声明，由 harness 安装闭包在运行时提供，无需重复打包。
+
+装完后运行随包发布的配置向导，交互式地填 key、拉取实时模型列表并把它设为默认渠道：
+
+```sh
+dsh-siliconflow-setup
+```
+
+向导依次：询问是否把 SiliconFlow 设为默认渠道 → 未找到 `SILICONFLOW_API_KEY` 时引导填写并写入 `$DSH_HOME/.credentials.yaml` → 用 key 做 live discovery 拉取 `/models?sub_type=chat` 列表（失败则回退到内置目录）→ 选择默认模型 → 写入 `$DSH_HOME/settings.yaml` 的 `agent-default-model`。它只读 `$DSH_HOME`（缺省 `~/.dsh`），不改动 harness 本体。
+
+不想用向导时，装完填一个 key 即可使用：
 
 ```sh
 export SILICONFLOW_API_KEY=sk-...   # 或写入 $DSH_HOME/.credentials.yaml
