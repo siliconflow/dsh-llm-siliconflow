@@ -6,6 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# npm trusted publishing: the workflow authenticates via OIDC, no NPM_TOKEN.
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   publish:
     name: Build and publish to npm
@@ -29,8 +34,8 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # `prepublishOnly` runs `npm run build` (tsc + tsdown), so the published
-      # tarball is always the freshly built artifact.
+      # `prepublishOnly` runs `npm run build` (tsc + tsdown). `--provenance`
+      # signs the tarball with the build provenance statement.
       - name: Publish
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -39,6 +44,4 @@ jobs:
             *) TAG=latest ;;
           esac
           echo "publishing $VERSION with dist-tag $TAG"
-          npm publish --access public --tag "$TAG"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public --tag "$TAG" --provenance
