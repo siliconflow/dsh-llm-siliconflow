@@ -26,6 +26,8 @@ dsh-siliconflow-setup
 
 向导依次：询问是否把 SiliconFlow 设为默认渠道 → 未找到 `SILICONFLOW_API_KEY` 时引导填写并写入 `$DSH_HOME/.credentials.yaml` → 用 key 做 live discovery 拉取 `/models?sub_type=chat` 列表（失败则回退到内置目录）→ 选择默认模型 → 写入 `$DSH_HOME/settings.yaml` 的 `agent-default-model`。它只读 `$DSH_HOME`（缺省 `~/.dsh`），不改动 harness 本体。
 
+向导写入 `agent-default-model` 时只写 `provider` + `model`，**不带 `reasoningEffort`**。SiliconFlow 端点没有推理档位概念，残留的 `reasoningEffort`（例如从 deepseek-official 切过来没清）会在发请求前以 `UNSUPPORTED_REASONING_EFFORT` 被拒绝。**手动改 `settings.yaml` 切到 siliconflow 时，记得把 `agent-default-model` 里的 `reasoningEffort` 删掉**（走向导则无需操心）。
+
 不想用向导时，装完填一个 key 即可使用：
 
 ```sh
