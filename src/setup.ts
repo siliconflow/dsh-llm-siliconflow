@@ -1,5 +1,5 @@
 /**
- * Interactive setup wizard core for {@link @siliconflow/dsh-llm-siliconflow}:
+ * Interactive setup wizard core for {@link @siliconflow-official/dsh-llm-siliconflow}:
  * the pure steps (harness-home and document-path resolution, credential and
  * settings read/write, model-choice parsing) plus the orchestration over an
  * injected I/O face, so the thin bin entry stays untested glue and the whole
@@ -8,7 +8,7 @@
  * The wizard guides a fresh install to a working route: confirm the default
  * channel, obtain an API key, interrogate the live chat-model listing, pick a
  * default model, then persist `agent-default-model` into `settings.yaml`.
- * @module @siliconflow/dsh-llm-siliconflow/setup
+ * @module @siliconflow-official/dsh-llm-siliconflow/setup
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'

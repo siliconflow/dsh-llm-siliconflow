@@ -8,7 +8,7 @@
  * restarting anything, while an in-flight stream keeps the facts it started
  * with. The one registration-captured fact — the retry policy — re-registers
  * the route in place when it changes.
- * @module @siliconflow/dsh-llm-siliconflow
+ * @module @siliconflow-official/dsh-llm-siliconflow
  */
 
 import type { Context } from '@deepseek-ai/cordis'

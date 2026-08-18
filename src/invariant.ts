@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@siliconflow/dsh-llm-siliconflow`.
- * @module @siliconflow/dsh-llm-siliconflow/invariant
+ * Package-owned invariant companion for `@siliconflow-official/dsh-llm-siliconflow`.
+ * @module @siliconflow-official/dsh-llm-siliconflow/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@siliconflow/dsh-llm-siliconflow'
+const PACKAGE_NAME = '@siliconflow-official/dsh-llm-siliconflow'
 
 /** Cordis companion plugin name. */
 export const name = 'llm-siliconflow-invariant'

@@ -1,4 +1,4 @@
-# @siliconflow/dsh-llm-siliconflow
+# @siliconflow-official/dsh-llm-siliconflow
 
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) LLM 接缝的 SiliconFlow chat-completions 适配器插件：用直接 `fetch` + SSE（由 `eventsource-parser` 分帧）把 SiliconFlow 的 OpenAI 兼容线上格式翻译成 `StreamChunk` 协议。SiliconFlow 托管着广泛的开源模型目录，其中包含 delta 携带 `reasoning_content` 的推理模型（DeepSeek-R1、QwQ、Kimi-K2-Thinking）——适配器把该通道翻译成 harness reasoning 块，并在工具调用轮次按这些模型的要求将其回传。
 
@@ -13,7 +13,7 @@
 一行命令装进任意 profile：
 
 ```sh
-dsh plugin --profile <name> add @siliconflow/dsh-llm-siliconflow
+dsh plugin --profile <name> add @siliconflow-official/dsh-llm-siliconflow
 ```
 
 该命令由 `dsh plugin` 转发给 pnpm，把本包装进 profile 并把它声明的 bundle patch（`cordis.patch.yml`，自动挂载 `siliconflow` 路由）合并进 `dsh.profile.bundles`。`@deepseek-ai/dsh-*` 以 peerDependencies 声明，由 harness 安装闭包在运行时提供，无需重复打包。
@@ -47,12 +47,12 @@ dsh plugin --profile <name> add /path/to/dsh-llm-siliconflow
 ### 用 npx 启动（无需本地安装 dsh）
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web add @siliconflow/dsh-llm-siliconflow  # 装到 web profile
-npx @siliconflow/dsh-llm-siliconflow                                            # 交互式 setup
+npx @deepseek-ai/dsh plugin --profile web add @siliconflow-official/dsh-llm-siliconflow  # 装到 web profile
+npx @siliconflow-official/dsh-llm-siliconflow                                            # 交互式 setup
 npx @deepseek-ai/dsh web                                                        # 打开 http://127.0.0.1:3080
 ```
 
-`npx @siliconflow/dsh-llm-siliconflow` 运行本包唯一 bin（`dsh-siliconflow-setup`），与被装进哪个 profile 无关——setup 只读写 `$DSH_HOME` 下的 credentials 与 settings。
+`npx @siliconflow-official/dsh-llm-siliconflow` 运行本包唯一 bin（`dsh-siliconflow-setup`），与被装进哪个 profile 无关——setup 只读写 `$DSH_HOME` 下的 credentials 与 settings。
 
 ### 后台启动
 
@@ -70,7 +70,7 @@ nohup npx @deepseek-ai/dsh --profile headless "任务" > ~/.dsh/task.log 2>&1 &
 
 ```yaml
 - id: llm-siliconflow
-  name: '@siliconflow/dsh-llm-siliconflow'
+  name: '@siliconflow-official/dsh-llm-siliconflow'
   config:
     apiKeyEnv: SILICONFLOW_API_KEY # default; resolved per request via ctx.credentials, then the environment
     baseURL: https://api.siliconflow.cn/v1 # optional; $SILICONFLOW_BASE_URL then the public API when omitted

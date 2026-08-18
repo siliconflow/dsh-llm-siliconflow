@@ -76,7 +76,7 @@ async function loadComposition(
       ]
       : [],
     '- id: llm-siliconflow',
-    "  name: '@siliconflow/dsh-llm-siliconflow'",
+    "  name: '@siliconflow-official/dsh-llm-siliconflow'",
     '  config:',
     `    baseURL: ${JSON.stringify(options.baseURL)}`,
     '',
@@ -91,7 +91,7 @@ async function loadComposition(
     ['test-llm-service', LlmRuntime],
     ['@deepseek-ai/dsh-settings-file', FileSettingsProvider],
     ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
-    ['@siliconflow/dsh-llm-siliconflow', LlmSiliconFlow],
+    ['@siliconflow-official/dsh-llm-siliconflow', LlmSiliconFlow],
   ])
   ctx.loader.internal = {
     version: 'v2',

@@ -3,7 +3,7 @@
  * Executable entry for the SiliconFlow setup wizard: wire the real terminal
  * and the public endpoint's live listing into {@link runSetup}. Kept as thin
  * glue so the wizard core is testable without a terminal.
- * @module @siliconflow/dsh-llm-siliconflow/bin
+ * @module @siliconflow-official/dsh-llm-siliconflow/bin
  */
 
 import { createInterface } from 'node:readline/promises'
