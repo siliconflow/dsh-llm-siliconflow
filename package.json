@@ -1,7 +1,7 @@
 {
   "name": "@siliconflow-official/dsh-llm-siliconflow",
   "description": "SiliconFlow (OpenAI-compatible) chat-completions adapter plugin for the DeepSeek Harness LLM seam",
-  "version": "0.1.0-rc.6",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },

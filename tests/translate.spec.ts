@@ -123,6 +123,20 @@ describe('translate: tool calls', () => {
     ])
   })
 
+  it('ignores empty-string name and null id on argument deltas (SiliconFlow shape)', async () => {
+    // SiliconFlow streams `name: ""` and `id: null` on every argument-only
+    // delta (OpenAI omits them); the first delta's real name/id must survive.
+    const out = await collect(translate(feed(
+      firstChunk,
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_x', type: 'function', function: { name: 'read', arguments: '' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: null, type: null, function: { name: '', arguments: '{"file_path": "/etc/hostname"}' } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      DONE,
+    )))
+    const block = out.find(c => c.type === 'block-end')
+    expect(block).toEqual({ type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call_x', name: 'read', arguments: '{"file_path": "/etc/hostname"}' } })
+  })
+
   it('disambiguates parallel tool calls by wire index', async () => {
     const chunks = await collect(translate(feed(
       firstChunk,
