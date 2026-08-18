@@ -13,7 +13,7 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "bin": {
-    "dsh-siliconflow-setup": "./lib/bin.js"
+    "dsh-siliconflow-setup": "lib/bin.js"
   },
   "exports": {
     ".": {
@@ -38,7 +38,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsdown",
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json && tsdown",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
