@@ -38,8 +38,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # `prepublishOnly` runs `npm run build` (tsc + tsdown). `--provenance`
-      # signs the tarball with the build provenance statement.
+      # `prepublishOnly` runs `npm run build` (tsc + tsdown). No `--provenance`:
+      # sigstore only signs builds from public repositories, and this repo is
+      # private (org-visible).
       - name: Publish
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -48,4 +49,4 @@ jobs:
             *) TAG=latest ;;
           esac
           echo "publishing $VERSION with dist-tag $TAG"
-          npm publish --access public --tag "$TAG" --provenance
+          npm publish --access public --tag "$TAG"
