@@ -22,25 +22,25 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
       '@deepseek-ai/dsh-anonymous-user-id':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-home-paths@0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@deepseek-ai/dsh-credentials':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@deepseek-ai/dsh-invariants':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)
       '@deepseek-ai/dsh-launch-environment':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.3(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@deepseek-ai/dsh-llm':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))
       '@deepseek-ai/dsh-settings':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.0.1-rc.5(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/schemastery@3.18.1)
       '@deepseek-ai/dsh-timeout':
-        specifier: '*'
+        specifier: '>=0.0.1-rc.0'
         version: 0.0.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@types/node':
         specifier: ^22.0.0
