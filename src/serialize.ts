@@ -3,15 +3,24 @@
  * joined; assistant text becomes `content`, tool calls become `tool_calls`,
  * and tool results become separate tool messages. Assistant reasoning is
  * replayed as `reasoning_content` only on tool-call turns, as hosted reasoning
- * models (DeepSeek-R1 and siblings) require. Core image blocks are rejected
- * explicitly because this wire route is text-only; unknown declaration-merged
- * block types retain the adapter's documented extension fallback.
+ * models (DeepSeek-R1 and siblings) require.
+ *
+ * **Multimodal**: image blocks in user messages are serialized as
+ * OpenAI-compatible `image_url` content parts with base64 data URLs. The
+ * serializer resolves image attachments through the optional attachment-store
+ * resolver; when no resolver is available, images are replaced with the
+ * `OFFLOADED_IMAGE_TEXT` sentinel. Tool-result content is flattened to text
+ * (images within tool results are also replaced with the sentinel). Unknown
+ * declaration-merged block types retain the adapter's documented extension
+ * fallback.
+ *
  * @module dsh-llm-siliconflow/serialize
  */
 
-import { contentHasImage, LlmError } from '@deepseek-ai/dsh-llm'
+import { OFFLOADED_IMAGE_TEXT } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
-import type { WireMessage, WireRequest, WireTool } from './types.ts'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { WireImagePart, WireMessage, WireTextPart, WireRequest, WireTool } from './types.ts'
 
 /** Join the text blocks of a message (used for user/tool-result content). */
 function flattenText(blocks: ContentBlock[]): string {
@@ -21,14 +30,63 @@ function flattenText(blocks: ContentBlock[]): string {
     .join('')
 }
 
-/** Reject core image content before any text-flattening path can silently erase it. */
-function assertTextOnly(blocks: readonly ContentBlock[]): void {
-  if (contentHasImage(blocks)) {
-    throw new LlmError('The SiliconFlow chat-completions adapter does not support image content.', 'UNSUPPORTED_CONTENT')
-  }
+/**
+ * Replace image blocks (including nested ones in tool results) with the
+ * `OFFLOADED_IMAGE_TEXT` sentinel so the provider sees a coherent text
+ * placeholder instead of silently dropped bytes. This is the no-store fallback;
+ * the multimodal path resolves real base64 data URLs instead.
+ */
+function replaceImagesWithSentinel(blocks: readonly ContentBlock[]): ContentBlock[] {
+  return blocks.map(block => {
+    if (block.type === 'image') return { type: 'text', text: OFFLOADED_IMAGE_TEXT }
+    if (block.type === 'tool-result') {
+      return { ...block, content: replaceImagesWithSentinel(block.content) }
+    }
+    return block
+  })
 }
 
-/** Serialize one assistant message (text + reasoning + tool calls). */
+/** Whether this message's content has any image blocks (user side). */
+function hasImages(blocks: readonly ContentBlock[]): boolean {
+  return blocks.some(block => block.type === 'image')
+}
+
+/**
+ * Build the wire content parts for a user message: text blocks become `text`
+ * parts, image blocks become `image_url` parts. Non-text/non-image blocks are
+ * skipped (merge-extensible fallback). An image block whose attachment cannot
+ * be resolved becomes the `OFFLOADED_IMAGE_TEXT` sentinel text part.
+ */
+async function serializeUserContent(
+  blocks: ContentBlock[],
+  resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined>,
+): Promise<string | (WireTextPart | WireImagePart)[]> {
+  const hasImage = hasImages(blocks)
+  if (!hasImage) return flattenText(blocks)
+
+  const parts: (WireTextPart | WireImagePart)[] = []
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      parts.push({ type: 'text', text: block.text })
+    } else if (block.type === 'image') {
+      const url = await resolveImage(block.attachment)
+      if (url !== undefined) {
+        parts.push({ type: 'image_url', image_url: { url } })
+      } else {
+        parts.push({ type: 'text', text: OFFLOADED_IMAGE_TEXT })
+      }
+    }
+    // Unknown block types are skipped (merge-extensible ContentBlockMap).
+  }
+  return parts
+}
+
+/**
+ * Serialize one assistant message (text + reasoning + tool calls). Image
+ * blocks in assistant content (forward compatibility) are replaced with the
+ * sentinel text — the chat-completions wire route carries images only in user
+ * content.
+ */
 function serializeAssistant(message: Message): WireMessage {
   const text = flattenText(message.content)
   const reasoning = message.content
@@ -64,13 +122,20 @@ function serializeAssistant(message: Message): WireMessage {
  * `{role: 'tool'}` messages; the harness puts each tool result in its own
  * user-role message, so a mixed user message contributes its text first and
  * its tool results as separate wire messages after.
+ *
+ * Image blocks within user messages are resolved through the `resolveImage`
+ * callback; images within tool results are flattened to the sentinel text
+ * (tool results carry structured data, not multimodal content).
  * @param messages - the harness conversation, in order.
+ * @param resolveImage - resolves an image attachment ref to a base64 data URL; returns `undefined` when unavailable.
  * @returns the wire messages; order preserved, each tool result expanded into its own entry.
  */
-export function serializeMessages(messages: Message[]): WireMessage[] {
+export async function serializeMessages(
+  messages: Message[],
+  resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined),
+): Promise<WireMessage[]> {
   const wire: WireMessage[] = []
   for (const message of messages) {
-    assertTextOnly(message.content)
     if (message.role === 'system') {
       wire.push({ role: 'system', content: flattenText(message.content) })
       continue
@@ -82,16 +147,23 @@ export function serializeMessages(messages: Message[]): WireMessage[] {
     // user role: tool results ride in user messages in the harness
     // vocabulary, but SiliconFlow wants them as role:'tool' messages.
     const toolResults = message.content.filter(block => block.type === 'tool-result')
-    const text = flattenText(message.content)
-    if (text.length > 0 || toolResults.length === 0) {
-      wire.push({ role: 'user', content: text })
+    const userBlocks = message.content.filter(block => block.type !== 'tool-result')
+
+    // Emit a user message for the text/image portion when it has any content.
+    // A block-less user message still emits as an empty user message.
+    if (userBlocks.length > 0 || toolResults.length === 0) {
+      const content = await serializeUserContent(userBlocks, resolveImage)
+      wire.push({ role: 'user', content })
     }
+
     for (const result of toolResults) {
+      // Tool result content is text-only on the wire; images in tool results
+      // are replaced with the sentinel.
+      const flatContent = flattenText(replaceImagesWithSentinel(result.content)) || '(no output)'
       wire.push({
         role: 'tool',
         tool_call_id: result.toolCallId,
-        // Empty tool output still needs SOME content on the wire.
-        content: flattenText(result.content) || '(no output)',
+        content: flatContent,
       })
     }
   }
@@ -103,14 +175,18 @@ export function serializeMessages(messages: Message[]): WireMessage[] {
  * reporting on); optional fields are omitted rather than sent as null, so
  * provider defaults apply.
  * @param options - the harness request (model, history, system, tools, sampling).
+ * @param resolveImage - resolves an image attachment ref to a base64 data URL; returns `undefined` when unavailable.
  * @returns the chat-completions request body.
  */
-export function serializeRequest(options: GenerateOptions): WireRequest {
+export async function serializeRequest(
+  options: GenerateOptions,
+  resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined),
+): Promise<WireRequest> {
   const messages: WireMessage[] = []
   if (options.system !== undefined) {
     messages.push({ role: 'system', content: options.system })
   }
-  messages.push(...serializeMessages(options.messages))
+  messages.push(...await serializeMessages(options.messages, resolveImage))
 
   const tools: WireTool[] | undefined = options.tools?.map(tool => ({
     type: 'function',

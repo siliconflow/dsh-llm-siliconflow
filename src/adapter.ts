@@ -14,10 +14,12 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  ModelModality,
   ResolvedRetryPolicy,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { discoverChatModels } from './discovery.ts'
@@ -38,6 +40,8 @@ export interface SiliconFlowCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link SiliconFlowConnectionOptions.maxTokens}. */
   maxTokens?: number
+  /** Accepted input modalities; omitted infers from the model id heuristically. */
+  inputModalities?: readonly ModelModality[]
 }
 
 /**
@@ -81,6 +85,12 @@ export interface SiliconFlowAdapterOptions {
   resolveApiKey: (connection: SiliconFlowConnectionOptions) => Promise<string>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
+  /**
+   * Resolve one image attachment to a base64 data URL for wire serialization.
+   * Returns `undefined` when the attachment store is unavailable or the read
+   * fails; the serializer substitutes the `OFFLOADED_IMAGE_TEXT` sentinel.
+   */
+  resolveImage?: (ref: ImageAttachmentRef) => Promise<string | undefined>
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -93,13 +103,43 @@ export const DEFAULT_MAX_TOKENS = 8_192
 export const DISCOVERY_TTL_MS = 5 * 60_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 
+/**
+ * Heuristic: infer input modalities from a SiliconFlow model id.
+ *
+ * SiliconFlow does not distinguish VLMs in the `GET /models?sub_type=chat`
+ * listing — visual models share the same chat endpoint — so the adapter infers
+ * multimodal capability from the model id's naming conventions. The inference
+ * is advisory: a catalog entry declaring explicit `inputModalities` bypasses
+ * the heuristic entirely, and a false positive only means the harness accepts
+ * an image the provider would then reject with an HTTP error.
+ *
+ * Known VLM naming patterns on SiliconFlow:
+ * - `*-VL-*` / `*-VL` (Qwen3-VL-8B-Instruct, Qwen3-VL-32B-Thinking, …)
+ * - `*-Omni-*` (Qwen3-Omni-30B-A3B-*)
+ * - `GLM-*V` (zai-org/GLM-4.5V)
+ * - `*OCR*` (deepseek-ai/DeepSeek-OCR, PaddlePaddle/PaddleOCR-VL-1.5)
+ * - `stepfun-ai/Step-*-Flash` (Step-3.5-Flash)
+ * @param id - the wire model id (e.g. `Qwen/Qwen3-VL-8B-Instruct`).
+ * @returns `['text', 'image']` when the id matches a VLM naming pattern, `['text']` otherwise.
+ */
+export function inferInputModalities(id: string): readonly ModelModality[] {
+  if (/-vl[-/]|-vl$|vl-/i.test(id)) return ['text', 'image']
+  if (/-omni-/i.test(id)) return ['text', 'image']
+  if (/glm-[\d.]+v$/i.test(id)) return ['text', 'image']
+  if (/ocr/i.test(id)) return ['text', 'image']
+  if (/stepfun-ai\/step-[\d.]+-flash/i.test(id)) return ['text', 'image']
+  return ['text']
+}
+
 function modelInfo(provider: string, model: SiliconFlowCatalogModel): LlmModelInfo {
+  const explicit = model.inputModalities
+  const modalities = explicit !== undefined && explicit.length > 0 ? explicit : inferInputModalities(model.id)
   return {
     provider,
     id: model.id,
     name: model.name ?? model.id,
     ...model.description === undefined ? {} : { description: model.description },
-    inputModalities: ['text'],
+    inputModalities: modalities,
   }
 }
 
@@ -212,12 +252,13 @@ export class SiliconFlowAdapter extends LlmAdapter {
     const discovered = this.freshDiscovery(connection)?.find(entry => entry.id === model)
     const entry = configured ?? discovered
     return Promise.resolve({
-      // The chat-completions wire route is text-only regardless of catalog
-      // membership, so the uncatalogued fallback declares the same negative
-      // capability — "unknown" here would let the host accept and persist
-      // images the serializer must then reject.
+      // Uncatalogued models infer modalities from the model id heuristically:
+      // a VLM id like `Qwen/Qwen3-VL-8B-Instruct` declares image input so the
+      // host accepts and persists images the serializer then sends as
+      // `image_url` content parts. A non-VLM id keeps `['text']` — "unknown"
+      // here would let the host accept images the serializer must then reject.
       ...entry === undefined
-        ? { provider, id: model, name: model, inputModalities: ['text' as const] }
+        ? { provider, id: model, name: model, inputModalities: inferInputModalities(model) }
         : modelInfo(provider, entry),
       context: { contextWindow: entry?.contextWindow ?? connection.defaultContextWindow },
       defaultMaxTokens: entry?.maxTokens ?? connection.maxTokens,
@@ -289,7 +330,7 @@ export class SiliconFlowAdapter extends LlmAdapter {
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = serializeRequest(options)
+    const body = await serializeRequest(options, this.config.resolveImage)
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
