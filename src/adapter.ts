@@ -82,6 +82,8 @@ export interface SiliconFlowAdapterOptions {
   resolveApiKey: (connection: SiliconFlowConnectionOptions) => Promise<string>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
+  /** Resolve one image attachment to a base64 data URL. */
+  resolveImage?: (ref: ImageAttachmentRef) => Promise<string | undefined>
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
