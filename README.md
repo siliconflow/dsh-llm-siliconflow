@@ -90,7 +90,7 @@ nohup npx @deepseek-ai/dsh --profile headless "任务" > ~/.dsh/task.log 2>&1 &
       - id: deepseek-ai/DeepSeek-V4-Flash
 ```
 
-目录条目可携带 `inputModalities` 字段（`['text']` 或 `['text', 'image']`）以显式声明模型接受的输入模态；省略时适配器从模型 id 启发式推断（含 `-VL-`、`-Omni-`、`GLM-*V`、`OCR` 等命名模式的 id 被识别为 VLM）。
+目录条目可携带 `inputModalities` 字段（`['text']` 或 `['text', 'image']`）以显式声明模型接受的输入模态；省略时适配器从内置的权威 VLM 模型集合（从模型广场 `vlm` 属性提取）查找。
 
 插件把单个提供方路由 `siliconflow` 连同其已解析的 `retryPolicy` 一并注册。请求用 `provider: siliconflow` 选中它；其 `model` 原样作为线上 `model` 字符串透传，因此更换 SiliconFlow 模型不需要生命周期级重新注册。线上模型 id 是 SiliconFlow 的 `org/model` 写法（如 `deepseek-ai/DeepSeek-V4-Flash`），绝不是短别名。省略 `models` 时保留一份由当前托管对话模型（含 VLM）组成的回退目录；显式列表会替换这些默认值，而 `models: []` 则一个都不通告。目录条目通过 `ctx.llm.listModels('siliconflow')` 暴露给 ACP 编辑器与 Web 选择器这类客户端，但始终是建议性的：未列出的模型 id 依然原样透传。省略的条目名默认等于其 id。
 
@@ -169,5 +169,5 @@ nohup npx @deepseek-ai/dsh --profile headless "任务" > ~/.dsh/task.log 2>&1 &
 - **未映射 `tool_choice`** —— 不属于核心词汇表（MVP 裁剪，与 pi-ai 和 DeepSeek 双胞胎相同）。
 - **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`** —— 没有共享代理/拦截配置；待有第二个直接 fetch 适配器需要时再采用（`TODO(http)`）。
 - **序列化把 user 与 tool-result 内容扁平化为文本块** —— 插件添加的块类型被跳过，空工具输出以字面 `(no output)` 上线。
-- **VLM 启发式推断** —— SiliconFlow 的 `GET /models` 不区分 VLM 和纯文本模型；适配器从模型 id 的命名模式（`-VL-`、`-Omni-`、`GLM-*V`、`OCR`、`Step-*Flash`）启发式推断图片输入能力。目录条目可通过 `inputModalities` 字段显式声明以绕过推断。
+- **VLM 模型集** —— SiliconFlow 的 OpenAI 兼容 `GET /models` API 不区分 VLM 和纯文本模型，但模型广场（siliconflow.cn/models）为每个模型标注了 `vlm` 属性。适配器内置了从模型广场提取的权威 VLM 模型集合（当前 23 个），替代命名模式猜测。目录条目可通过 `inputModalities` 字段显式声明以覆盖集合。
 - **图片附件依赖存储服务** —— 用户消息中的图片块通过 `ctx.attachments` 解析为 base64 data URL；未挂载该服务时图片被替换为 `[image omitted]` 占位文本，请求仍可继续。工具结果中的图片始终被替换为占位文本。

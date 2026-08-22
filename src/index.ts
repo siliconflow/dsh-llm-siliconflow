@@ -62,17 +62,21 @@ export const PROVIDER = 'siliconflow'
  * harness accepts images for them even without the heuristic inference.
  */
 export const DEFAULT_MODELS: SiliconFlowCatalogModel[] = [
+  // Text-only models
   { id: 'zai-org/GLM-5.2', contextWindow: 1_000_000 },
-  { id: 'moonshotai/Kimi-K2.7-Code', contextWindow: 256_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Pro', contextWindow: 1_000_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Flash', contextWindow: 1_000_000 },
-  { id: 'Pro/moonshotai/Kimi-K2.6', contextWindow: 256_000 },
-  { id: 'Qwen/Qwen3.5-397B-A17B', contextWindow: 256_000 },
-  { id: 'zai-org/GLM-4.5V', contextWindow: 131_072, inputModalities: ['text', 'image'] },
-  { id: 'Qwen/Qwen3-VL-32B-Instruct', contextWindow: 131_072, inputModalities: ['text', 'image'] },
-  { id: 'Qwen/Qwen3-VL-32B-Thinking', contextWindow: 131_072, inputModalities: ['text', 'image'] },
-  { id: 'Qwen/Qwen3-VL-8B-Instruct', contextWindow: 131_072, inputModalities: ['text', 'image'] },
-  { id: 'Qwen/Qwen3-VL-8B-Thinking', contextWindow: 131_072, inputModalities: ['text', 'image'] },
+  { id: 'Pro/zai-org/GLM-5.1', contextWindow: 131_072 },
+  // VLM models — declare inputModalities explicitly (matches marketplace vlm:true)
+  { id: 'moonshotai/Kimi-K2.7-Code', contextWindow: 256_000, inputModalities: ['text', 'image'] },
+  { id: 'Pro/moonshotai/Kimi-K2.6', contextWindow: 256_000, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3.5-397B-A17B', contextWindow: 256_000, inputModalities: ['text', 'image'] },
+  { id: 'zai-org/GLM-4.5V', contextWindow: 65_536, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-32B-Instruct', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-8B-Instruct', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-32B-Thinking', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-8B-Thinking', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'deepseek-ai/DeepSeek-OCR', contextWindow: 8_192, inputModalities: ['text', 'image'] },
 ]
 
 /**

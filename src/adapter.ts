@@ -104,31 +104,54 @@ export const DISCOVERY_TTL_MS = 5 * 60_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 
 /**
- * Heuristic: infer input modalities from a SiliconFlow model id.
+ * Authoritative set of SiliconFlow model ids that accept image input.
  *
- * SiliconFlow does not distinguish VLMs in the `GET /models?sub_type=chat`
- * listing — visual models share the same chat endpoint — so the adapter infers
- * multimodal capability from the model id's naming conventions. The inference
- * is advisory: a catalog entry declaring explicit `inputModalities` bypasses
- * the heuristic entirely, and a false positive only means the harness accepts
- * an image the provider would then reject with an HTTP error.
+ * SiliconFlow's model marketplace (siliconflow.cn/models) tags every chat model
+ * with a `vlm` boolean. The OpenAI-compatible `GET /models` API does not expose
+ * this attribute, so the adapter ships a set of known VLM model ids extracted
+ * from the marketplace. Catalog entries can still declare explicit
+ * `inputModalities` to override this set.
  *
- * Known VLM naming patterns on SiliconFlow:
- * - `*-VL-*` / `*-VL` (Qwen3-VL-8B-Instruct, Qwen3-VL-32B-Thinking, …)
- * - `*-Omni-*` (Qwen3-Omni-30B-A3B-*)
- * - `GLM-*V` (zai-org/GLM-4.5V)
- * - `*OCR*` (deepseek-ai/DeepSeek-OCR, PaddlePaddle/PaddleOCR-VL-1.5)
- * - `stepfun-ai/Step-*-Flash` (Step-3.5-Flash)
+ * Last refreshed: 2026-08-22 from siliconflow.cn/models SSR data (23 VLM models
+ * out of 88 total chat models).
+ */
+const KNOWN_VLM_MODELS: ReadonlySet<string> = new Set([
+  'PaddlePaddle/PaddleOCR-VL-1.5',
+  'Pro/moonshotai/Kimi-K2.6',
+  'Qwen/Qwen3-Omni-30B-A3B-Captioner',
+  'Qwen/Qwen3-Omni-30B-A3B-Instruct',
+  'Qwen/Qwen3-Omni-30B-A3B-Thinking',
+  'Qwen/Qwen3-VL-30B-A3B-Instruct',
+  'Qwen/Qwen3-VL-30B-A3B-Thinking',
+  'Qwen/Qwen3-VL-32B-Instruct',
+  'Qwen/Qwen3-VL-32B-Thinking',
+  'Qwen/Qwen3-VL-8B-Instruct',
+  'Qwen/Qwen3-VL-8B-Thinking',
+  'Qwen/Qwen3.5-122B-A10B',
+  'Qwen/Qwen3.5-27B',
+  'Qwen/Qwen3.5-35B-A3B',
+  'Qwen/Qwen3.5-397B-A17B',
+  'Qwen/Qwen3.5-4B',
+  'Qwen/Qwen3.5-9B',
+  'Qwen/Qwen3.6-27B',
+  'Qwen/Qwen3.6-35B-A3B',
+  'deepseek-ai/DeepSeek-OCR',
+  'moonshotai/Kimi-K2.7-Code',
+  'nex-agi/Nex-N2-Pro',
+  'zai-org/GLM-4.5V',
+])
+
+/**
+ * Determine the input modalities for a SiliconFlow model id.
+ *
+ * Uses the authoritative VLM model set from the SiliconFlow marketplace rather
+ * than naming-pattern heuristics. Catalog entries can declare explicit
+ * `inputModalities` to override this lookup.
  * @param id - the wire model id (e.g. `Qwen/Qwen3-VL-8B-Instruct`).
- * @returns `['text', 'image']` when the id matches a VLM naming pattern, `['text']` otherwise.
+ * @returns `['text', 'image']` when the id is a known VLM, `['text']` otherwise.
  */
 export function inferInputModalities(id: string): readonly ModelModality[] {
-  if (/-vl[-/]|-vl$|vl-/i.test(id)) return ['text', 'image']
-  if (/-omni-/i.test(id)) return ['text', 'image']
-  if (/glm-[\d.]+v$/i.test(id)) return ['text', 'image']
-  if (/ocr/i.test(id)) return ['text', 'image']
-  if (/stepfun-ai\/step-[\d.]+-flash/i.test(id)) return ['text', 'image']
-  return ['text']
+  return KNOWN_VLM_MODELS.has(id) ? ['text', 'image'] : ['text']
 }
 
 function modelInfo(provider: string, model: SiliconFlowCatalogModel): LlmModelInfo {
