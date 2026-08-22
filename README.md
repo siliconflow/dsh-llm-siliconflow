@@ -90,7 +90,7 @@ nohup npx @deepseek-ai/dsh --profile headless "任务" > ~/.dsh/task.log 2>&1 &
       - id: deepseek-ai/DeepSeek-V4-Flash
 ```
 
-目录条目可携带 `inputModalities` 字段（`['text']` 或 `['text', 'image']`）以显式声明模型接受的输入模态；省略时适配器从内置的权威 VLM 模型集合（从模型广场 `vlm` 属性提取）查找。
+目录条目可携带 `inputModalities` 字段（`['text']` 或 `['text', 'image']`）以显式声明模型接受的输入模态；省略时适配器从内置的权威 VLM 模型集合（从模型广场 `vlm` 属性提取，静态维护，最后更新 2026-08-22）查找。
 
 插件把单个提供方路由 `siliconflow` 连同其已解析的 `retryPolicy` 一并注册。请求用 `provider: siliconflow` 选中它；其 `model` 原样作为线上 `model` 字符串透传，因此更换 SiliconFlow 模型不需要生命周期级重新注册。线上模型 id 是 SiliconFlow 的 `org/model` 写法（如 `deepseek-ai/DeepSeek-V4-Flash`），绝不是短别名。省略 `models` 时保留一份由当前托管对话模型（含 VLM）组成的回退目录；显式列表会替换这些默认值，而 `models: []` 则一个都不通告。目录条目通过 `ctx.llm.listModels('siliconflow')` 暴露给 ACP 编辑器与 Web 选择器这类客户端，但始终是建议性的：未列出的模型 id 依然原样透传。省略的条目名默认等于其 id。
 
@@ -163,11 +163,11 @@ nohup npx @deepseek-ai/dsh --profile headless "任务" > ~/.dsh/task.log 2>&1 &
 
 ## Known Limitations and Deferred Work
 
-- **回退 `models` 列表是手工维护的** —— 六个默认值是一份小快照，仅在发现无法运行时展示；实时列表才是权威目录。
+- **回退 `models` 列表是手工维护的** —— 默认值是一份快照，仅在发现无法运行时展示；实时列表才是权威目录。
 - **发现不跨 baseURL 变化缓存** —— 缓存按端点键控，因此改指路由会在下一次 `listModels` 重新询问。
 - **settings 的 `models` 列表整体替换组合列表** —— settings 层合并在字段粒度进行，数组是一个字段；按条目合并目录需要键控结构。
 - **未映射 `tool_choice`** —— 不属于核心词汇表（MVP 裁剪，与 pi-ai 和 DeepSeek 双胞胎相同）。
 - **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`** —— 没有共享代理/拦截配置；待有第二个直接 fetch 适配器需要时再采用（`TODO(http)`）。
 - **序列化把 user 与 tool-result 内容扁平化为文本块** —— 插件添加的块类型被跳过，空工具输出以字面 `(no output)` 上线。
-- **VLM 模型集** —— SiliconFlow 的 OpenAI 兼容 `GET /models` API 不区分 VLM 和纯文本模型，但模型广场（siliconflow.cn/models）为每个模型标注了 `vlm` 属性。适配器内置了从模型广场提取的权威 VLM 模型集合（当前 23 个），替代命名模式猜测。目录条目可通过 `inputModalities` 字段显式声明以覆盖集合。
+- **VLM 模型集与回退目录的 contextWindow 均为静态数据** —— SiliconFlow 的 OpenAI 兼容 `GET /models` API 不返回模型的 `vlm` 属性或 `contextLen` 字段，因此适配器内置了从模型广场（siliconflow.cn/models）SSR 数据提取的权威 VLM 模型 ID 集合（当前 23 个）和回退目录的上下文窗口配置。这些静态数据会随模型广场更新而定期同步，直至 OpenAPI 本身暴露相关属性（如 `sub_type=vision` 或模型列表中的 `vlm` 字段）后被运行时查询取代。目录条目可通过 `inputModalities` 字段显式声明以覆盖静态集合。
 - **图片附件依赖存储服务** —— 用户消息中的图片块通过 `ctx.attachments` 解析为 base64 data URL；未挂载该服务时图片被替换为 `[image omitted]` 占位文本，请求仍可继续。工具结果中的图片始终被替换为占位文本。

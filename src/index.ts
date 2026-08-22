@@ -58,8 +58,15 @@ export const PROVIDER = 'siliconflow'
 
 /**
  * Fallback advisory catalog: widely hosted chat models including VLMs, also the
- * setup CLI's discovery fallback. VLM entries declare `inputModalities` so the
- * harness accepts images for them even without the heuristic inference.
+ * setup CLI's discovery fallback.
+ *
+ * **Static data** — the `contextWindow` values and VLM flags are extracted from
+ * the SiliconFlow model marketplace (siliconflow.cn/models). The live
+ * `GET /models?sub_type=chat` API does not return context window or VLM metadata,
+ * so these fields are maintained by hand. This catalog will be kept in sync with
+ * the marketplace until the API exposes these attributes natively.
+ *
+ * Last updated: 2026-08-22. VLM entries declare `inputModalities` explicitly.
  */
 export const DEFAULT_MODELS: SiliconFlowCatalogModel[] = [
   // Text-only models

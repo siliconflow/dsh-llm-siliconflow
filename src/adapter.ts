@@ -106,14 +106,21 @@ const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 /**
  * Authoritative set of SiliconFlow model ids that accept image input.
  *
+ * **Static data — see maintenance note below.**
+ *
  * SiliconFlow's model marketplace (siliconflow.cn/models) tags every chat model
  * with a `vlm` boolean. The OpenAI-compatible `GET /models` API does not expose
  * this attribute, so the adapter ships a set of known VLM model ids extracted
- * from the marketplace. Catalog entries can still declare explicit
+ * from the marketplace's SSR data. Catalog entries can still declare explicit
  * `inputModalities` to override this set.
  *
- * Last refreshed: 2026-08-22 from siliconflow.cn/models SSR data (23 VLM models
- * out of 88 total chat models).
+ * **Maintenance**: this set is hand-maintained and will drift from the live
+ * marketplace as new VLM models are added or existing ones are deprecated. It is
+ * refreshed periodically. Once the OpenAI-compatible API exposes model
+ * capabilities (e.g. a `vision` sub_type or a `vlm` field in the model listing),
+ * this static set will be replaced by a runtime query.
+ *
+ * Last updated: 2026-08-22 (23 VLM models out of 88 chat models).
  */
 const KNOWN_VLM_MODELS: ReadonlySet<string> = new Set([
   'PaddlePaddle/PaddleOCR-VL-1.5',
