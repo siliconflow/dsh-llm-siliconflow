@@ -160,16 +160,78 @@ describe('serializeMessages', () => {
   })
 
   it('replaces image blocks with the offload sentinel when no resolver is provided', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
     const wire = await serializeMessages([
       createUserMessage({
         content: [
           { type: 'text', text: 'describe' },
-          { type: 'image', attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 68, width: 1, height: 1 } satisfies ImageAttachmentRef },
+          { type: 'image', attachment: ref },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
     ])
-    expect(wire).toHaveLength(1)
+    // No resolver: image replaced with sentinel text.
+    expect(wire).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'describe' },
+        // oxlint-disable-next-line typescript/no-unsafe-assignment
+        { type: 'text', text: expect.stringContaining('[image omitted') },
+      ],
+    }])
+  })
+
+  it('replaces image blocks with the offload sentinel when the resolver returns undefined', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined)
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [
+          { type: 'image', attachment: ref },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ], resolveImage)
+    expect(wire).toEqual([{
+      role: 'user',
+      content: [
+        // oxlint-disable-next-line typescript/no-unsafe-assignment
+        { type: 'text', text: expect.stringContaining('[image omitted') },
+      ],
+    }])
+  })
+
+  it('replaces images in tool-result content with the offload sentinel', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [{
+          type: 'tool-result',
+          toolCallId: CallId('call-1'),
+          content: [
+            { type: 'text', text: 'screenshot:' },
+            { type: 'image', attachment: ref },
+          ],
+        }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ])
+    // Images in tool results are flattened to text with the sentinel.
+    const tool = wire[0] as { content: string }
+    expect(tool.content).toContain('screenshot:')
+    expect(tool.content).toContain('[image omitted')
   })
 
   it('emits an empty user message rather than dropping block-less messages', async () => {
