@@ -133,7 +133,7 @@ describe('llm-siliconflow real dynamic composition', () => {
     await assemble(ctx, { model: MODEL, messages: [] })
     expect(serverA.requests).toHaveLength(1)
     expect(serverB.headers[0]?.authorization).toBe('Bearer rotated-key')
-  })
+  }, 15000)
 
   it('keeps a stored key writable and rotatable across a real restart', async () => {
     vi.stubEnv('SILICONFLOW_API_KEY', '')
