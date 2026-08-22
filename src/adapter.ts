@@ -40,7 +40,7 @@ export interface SiliconFlowCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link SiliconFlowConnectionOptions.maxTokens}. */
   maxTokens?: number
-  /** Accepted input modalities; omitted infers from the model id heuristically. */
+  /** Accepted input modalities; omitted infers from the built-in VLM model set. */
   inputModalities?: readonly ModelModality[]
 }
 
@@ -282,7 +282,7 @@ export class SiliconFlowAdapter extends LlmAdapter {
     const discovered = this.freshDiscovery(connection)?.find(entry => entry.id === model)
     const entry = configured ?? discovered
     return Promise.resolve({
-      // Uncatalogued models infer modalities from the model id heuristically:
+      // Uncatalogued models look up modalities from the built-in VLM model set:
       // a VLM id like `Qwen/Qwen3-VL-8B-Instruct` declares image input so the
       // host accepts and persists images the serializer then sends as
       // `image_url` content parts. A non-VLM id keeps `['text']` — "unknown"
