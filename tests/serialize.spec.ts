@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, CallId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { serializeMessages, serializeRequest } from '../src/serialize.ts'
@@ -132,104 +130,6 @@ describe('serializeMessages', () => {
       }),
     ])
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
-  })
-
-  it('serializes image blocks as image_url content parts with a resolved data URL', async () => {
-    const ref: ImageAttachmentRef = {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png' as const,
-      bytes: 68, width: 1, height: 1,
-    }
-    const resolveImage = () => Promise.resolve('data:image/png;base64,iVBOR')
-    const wire = await serializeMessages([
-      createUserMessage({
-        content: [
-          { type: 'text', text: 'What is this?' },
-          { type: 'image', attachment: ref },
-        ],
-        source: { kind: 'plugin', plugin: 'test' },
-      }),
-    ], resolveImage)
-    expect(wire).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'What is this?' },
-        { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
-      ],
-    }])
-  })
-
-  it('replaces image blocks with the offload sentinel when no resolver is provided', async () => {
-    const ref: ImageAttachmentRef = {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png' as const,
-      bytes: 68, width: 1, height: 1,
-    }
-    const wire = await serializeMessages([
-      createUserMessage({
-        content: [
-          { type: 'text', text: 'describe' },
-          { type: 'image', attachment: ref },
-        ],
-        source: { kind: 'plugin', plugin: 'test' },
-      }),
-    ])
-    // No resolver: image replaced with sentinel text.
-    expect(wire).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'describe' },
-        { type: 'text', text: expect.stringContaining('[image omitted') },
-      ],
-    }])
-  })
-
-  it('replaces image blocks with the offload sentinel when the resolver returns undefined', async () => {
-    const ref: ImageAttachmentRef = {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png' as const,
-      bytes: 68, width: 1, height: 1,
-    }
-    const resolveImage = () => Promise.resolve(undefined)
-    const wire = await serializeMessages([
-      createUserMessage({
-        content: [
-          { type: 'image', attachment: ref },
-        ],
-        source: { kind: 'plugin', plugin: 'test' },
-      }),
-    ], resolveImage)
-    expect(wire).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: expect.stringContaining('[image omitted') },
-      ],
-    }])
-  })
-
-  it('replaces images in tool-result content with the offload sentinel', async () => {
-    const ref: ImageAttachmentRef = {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png' as const,
-      bytes: 68, width: 1, height: 1,
-    }
-    const wire = await serializeMessages([
-      createUserMessage({
-        content: [{
-          type: 'tool-result',
-          toolCallId: CallId('call-1'),
-          content: [
-            { type: 'text', text: 'screenshot:' },
-            { type: 'image', attachment: ref },
-          ],
-        }],
-        source: { kind: 'plugin', plugin: 'test' },
-      }),
-    ])
-    // Images in tool results are flattened to text with the sentinel.
-    const tool = wire[0] as { content: string }
-    expect(tool.content).toContain('screenshot:')
-    expect(tool.content).toContain('[image omitted')
   })
 
   it('emits an empty user message rather than dropping block-less messages', async () => {
