@@ -165,6 +165,7 @@ describe('serializeMessages', () => {
       mediaType: 'image/png' as const,
       bytes: 68, width: 1, height: 1,
     }
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined)
     const wire = await serializeMessages([
       createUserMessage({
         content: [
@@ -173,8 +174,8 @@ describe('serializeMessages', () => {
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
-    ])
-    // No resolver: image replaced with sentinel text.
+    ], resolveImage)
+    // Resolver returns undefined: image replaced with sentinel text.
     expect(wire).toEqual([{
       role: 'user',
       content: [
