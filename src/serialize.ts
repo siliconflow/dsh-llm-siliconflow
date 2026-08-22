@@ -37,7 +37,7 @@ function flattenText(blocks: ContentBlock[]): string {
  * the multimodal path resolves real base64 data URLs instead.
  */
 function replaceImagesWithSentinel(blocks: readonly ContentBlock[]): ContentBlock[] {
-  return blocks.map(block => {
+  return blocks.map((block) => {
     if (block.type === 'image') return { type: 'text', text: OFFLOADED_IMAGE_TEXT }
     if (block.type === 'tool-result') {
       return { ...block, content: replaceImagesWithSentinel(block.content) }

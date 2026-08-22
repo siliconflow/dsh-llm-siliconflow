@@ -41,7 +41,7 @@ export interface SiliconFlowCatalogModel {
   /** Per-request output cap for this model; omission falls back to the profile's {@link SiliconFlowConnectionOptions.maxTokens}. */
   maxTokens?: number
   /** Accepted input modalities; omitted infers from the built-in VLM model set. */
-  inputModalities?: readonly ModelModality[]
+  inputModalities?: ModelModality[]
 }
 
 /**

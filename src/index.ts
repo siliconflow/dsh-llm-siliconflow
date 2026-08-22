@@ -18,7 +18,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { LlmModelDiscoveryRequest, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmModelDiscoveryRequest, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -110,14 +110,16 @@ export interface Config {
   retryPolicy?: RetryPolicyConfig
 }
 
-const catalogModel = z.object({
+const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+
+const catalogModel: z<SiliconFlowCatalogModel> = z.object({
   id: z.string().required(),
   name: z.string(),
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
-  inputModalities: z.array(z.union([z.const('text'), z.const('image')])),
-}) as z<SiliconFlowCatalogModel>
+  inputModalities: z.array(z.union(MODEL_MODALITIES)),
+})
 
 export const Config: z<Config> = z.object({
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
