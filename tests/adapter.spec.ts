@@ -544,21 +544,14 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmSiliconFlow, { baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'siliconflow', name: 'SiliconFlow' }])
     // Without a key, discovery cannot run, so the picker falls back to the
-    // configured default catalog. VLM entries declare image input modality.
+    // configured default catalog.
     await expect(ctx.llm.listModels('siliconflow')).resolves.toEqual([
       { provider: 'siliconflow', id: 'zai-org/GLM-5.2', name: 'zai-org/GLM-5.2', inputModalities: ['text'] },
+      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text'] },
       { provider: 'siliconflow', id: 'deepseek-ai/DeepSeek-V4-Pro', name: 'deepseek-ai/DeepSeek-V4-Pro', inputModalities: ['text'] },
       { provider: 'siliconflow', id: 'deepseek-ai/DeepSeek-V4-Flash', name: 'deepseek-ai/DeepSeek-V4-Flash', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'Pro/zai-org/GLM-5.1', name: 'Pro/zai-org/GLM-5.1', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'Pro/moonshotai/Kimi-K2.6', name: 'Pro/moonshotai/Kimi-K2.6', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'Qwen/Qwen3.5-397B-A17B', name: 'Qwen/Qwen3.5-397B-A17B', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'zai-org/GLM-4.5V', name: 'zai-org/GLM-4.5V', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-32B-Instruct', name: 'Qwen/Qwen3-VL-32B-Instruct', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-8B-Instruct', name: 'Qwen/Qwen3-VL-8B-Instruct', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-32B-Thinking', name: 'Qwen/Qwen3-VL-32B-Thinking', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-8B-Thinking', name: 'Qwen/Qwen3-VL-8B-Thinking', inputModalities: ['text', 'image'] },
-      { provider: 'siliconflow', id: 'deepseek-ai/DeepSeek-OCR', name: 'deepseek-ai/DeepSeek-OCR', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Pro/moonshotai/Kimi-K2.6', name: 'Pro/moonshotai/Kimi-K2.6', inputModalities: ['text'] },
+      { provider: 'siliconflow', id: 'Qwen/Qwen3.5-397B-A17B', name: 'Qwen/Qwen3.5-397B-A17B', inputModalities: ['text'] },
     ])
     await expect(ctx.llm.resolveModelInfo('siliconflow', MODEL))
       .resolves.toMatchObject({
@@ -586,29 +579,6 @@ describe('plugin registration and config', () => {
       kind: 'error',
       failure: { code: 'UNSUPPORTED_REASONING_EFFORT' },
     })
-  })
-
-  it('infers VLM modality from authoritative model set for uncatalogued models', async () => {
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmSiliconFlow, {
-      baseURL: 'http://127.0.0.1:1',
-      models: [{ id: 'Qwen/Qwen3-VL-32B-Instruct', contextWindow: 131_072 }],
-    })
-    // A catalogued VLM (explicit inputModalities)
-    await expect(ctx.llm.resolveModelInfo('siliconflow', 'Qwen/Qwen3-VL-32B-Instruct'))
-      .resolves.toMatchObject({ inputModalities: ['text', 'image'] })
-    // An uncatalogued VLM from the authoritative set
-    await expect(ctx.llm.resolveModelInfo('siliconflow', 'moonshotai/Kimi-K2.7-Code'))
-      .resolves.toMatchObject({ inputModalities: ['text', 'image'] })
-    await expect(ctx.llm.resolveModelInfo('siliconflow', 'nex-agi/Nex-N2-Pro'))
-      .resolves.toMatchObject({ inputModalities: ['text', 'image'] })
-    // An uncatalogued non-VLM
-    await expect(ctx.llm.resolveModelInfo('siliconflow', 'deepseek-ai/DeepSeek-V4-Flash'))
-      .resolves.toMatchObject({ inputModalities: ['text'] })
-    // GLM-5.2 is NOT a VLM despite matching GLM naming patterns
-    await expect(ctx.llm.resolveModelInfo('siliconflow', 'zai-org/GLM-5.2'))
-      .resolves.toMatchObject({ inputModalities: ['text'] })
   })
 
   it('advertises configured models without restricting arbitrary request ids', async () => {
@@ -769,7 +739,7 @@ describe('plugin registration and config', () => {
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'siliconflow', name: 'SiliconFlow' }])
-    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(13)
+    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(6)
     const first = await assemble(ctx, { model: MODEL, messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
     const second = await assemble(ctx, { model: MODEL, messages: [] })
@@ -848,7 +818,7 @@ describe('plugin registration and config', () => {
     expect(adapter).toBeInstanceOf(SiliconFlowAdapter)
     // Direct embedding shares the plugin's one resolve step, so it advertises
     // the same default catalog instead of a divergent empty one.
-    await expect(adapter.listModels('siliconflow')).resolves.toHaveLength(13)
+    await expect(adapter.listModels('siliconflow')).resolves.toHaveLength(6)
   })
 
   it('resolves connection facts and the credential exactly once per stream call', async () => {
@@ -906,7 +876,7 @@ describe('advisory catalog discovery', () => {
 
     await expect(ctx.llm.listModels('siliconflow')).resolves.toEqual([
       { provider: 'siliconflow', id: 'zai-org/GLM-5.2', name: 'zai-org/GLM-5.2', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text'] },
     ])
     expect(server.paths).toEqual(['/models?sub_type=chat'])
     expect(server.headers[0]?.authorization).toBe('Bearer test-key')
@@ -916,7 +886,7 @@ describe('advisory catalog discovery', () => {
     const server = await mockModelsServer([{ status: 500, body: '{}' }])
     const ctx = await harness(server.url)
 
-    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(13)
+    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(6)
   })
 
   it('serves the configured catalog without a key, making no network call', async () => {
@@ -926,7 +896,7 @@ describe('advisory catalog discovery', () => {
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmSiliconFlow, { baseURL: server.url })
 
-    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(13)
+    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(6)
     expect(server.paths).toEqual([])
   })
 
