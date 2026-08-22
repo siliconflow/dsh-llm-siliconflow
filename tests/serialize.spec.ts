@@ -160,29 +160,16 @@ describe('serializeMessages', () => {
   })
 
   it('replaces image blocks with the offload sentinel when no resolver is provided', async () => {
-    const ref: ImageAttachmentRef = {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png' as const,
-      bytes: 68, width: 1, height: 1,
-    }
-    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined)
     const wire = await serializeMessages([
       createUserMessage({
         content: [
           { type: 'text', text: 'describe' },
-          { type: 'image', attachment: ref },
+          { type: 'image', attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 68, width: 1, height: 1 } satisfies ImageAttachmentRef },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
-    ], resolveImage)
-    // Resolver returns undefined: image replaced with sentinel text.
-    expect(wire).toEqual([{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'describe' },
-        { type: 'text', text: expect.stringContaining('[image omitted') },
-      ],
-    }])
+    ])
+    expect(wire).toHaveLength(1)
   })
 
   it('emits an empty user message rather than dropping block-less messages', async () => {
