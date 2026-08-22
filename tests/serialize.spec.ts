@@ -140,7 +140,7 @@ describe('serializeMessages', () => {
       mediaType: 'image/png' as const,
       bytes: 68, width: 1, height: 1,
     }
-    const resolveImage = () => Promise.resolve('data:image/png;base64,iVBOR')
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve('data:image/png;base64,iVBOR')
     const wire = await serializeMessages([
       createUserMessage({
         content: [
@@ -190,7 +190,7 @@ describe('serializeMessages', () => {
       mediaType: 'image/png' as const,
       bytes: 68, width: 1, height: 1,
     }
-    const resolveImage = () => Promise.resolve(undefined)
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined)
     const wire = await serializeMessages([
       createUserMessage({
         content: [
