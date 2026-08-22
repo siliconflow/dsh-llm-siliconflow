@@ -278,9 +278,8 @@ export function apply(ctx: Context, config: Config): void {
     const attachments = ctx.get('attachments')
     if (attachments === undefined) return undefined
     try {
-      const stored = await attachments.readImage(ref)
-      const base64 = Buffer.from(stored.data).toString('base64')
-      return `data:${ref.mediaType};base64,${base64}`
+      const { data } = await attachments.readImage(ref)
+      return `data:${ref.mediaType};base64,${Buffer.from(data).toString('base64')}`
     } catch {
       // A failed read is not fatal: the serializer replaces the image with the
       // sentinel text, so the request proceeds without that image.
