@@ -124,16 +124,16 @@ describe('llm-siliconflow real dynamic composition', () => {
     await writeFile(settingsPath, `llm-siliconflow:\n  baseURL: ${serverB.url}\n`)
     await vi.waitFor(() => {
       expect((ctx.get('settings')!.get(NS) as { baseURL?: string }).baseURL).toBe(serverB.url)
-    }, { timeout: 10000 })
+    }, { timeout: 5000 })
     await writeFile(credentialsPath, 'SILICONFLOW_API_KEY: rotated-key\n', { mode: 0o600 })
     await vi.waitFor(async () => {
       expect(await ctx.get('credentials')!.resolve(KEY_REF)).toEqual({ value: 'rotated-key', source: 'file' })
-    }, { timeout: 10000 })
+    }, { timeout: 5000 })
 
     await assemble(ctx, { model: MODEL, messages: [] })
     expect(serverA.requests).toHaveLength(1)
     expect(serverB.headers[0]?.authorization).toBe('Bearer rotated-key')
-  }, 15000)
+  })
 
   it('keeps a stored key writable and rotatable across a real restart', async () => {
     vi.stubEnv('SILICONFLOW_API_KEY', '')
