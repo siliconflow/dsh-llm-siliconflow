@@ -14,10 +14,12 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  ModelModality,
   ResolvedRetryPolicy,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { discoverChatModels } from './discovery.ts'
@@ -38,6 +40,8 @@ export interface SiliconFlowCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link SiliconFlowConnectionOptions.maxTokens}. */
   maxTokens?: number
+  /** Accepted input modalities; omitted infers from the built-in VLM model set. */
+  inputModalities?: ModelModality[]
 }
 
 /**
@@ -81,6 +85,12 @@ export interface SiliconFlowAdapterOptions {
   resolveApiKey: (connection: SiliconFlowConnectionOptions) => Promise<string>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
+  /**
+   * Resolve one image attachment to a base64 data URL for wire serialization.
+   * Returns `undefined` when the attachment store is unavailable or the read
+   * fails; the serializer substitutes the `OFFLOADED_IMAGE_TEXT` sentinel.
+   */
+  resolveImage?: (ref: ImageAttachmentRef) => Promise<string | undefined>
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -93,13 +103,73 @@ export const DEFAULT_MAX_TOKENS = 8_192
 export const DISCOVERY_TTL_MS = 5 * 60_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 
+/**
+ * Authoritative set of SiliconFlow model ids that accept image input.
+ *
+ * **Static data — see maintenance note below.**
+ *
+ * SiliconFlow's model marketplace (siliconflow.cn/models) tags every chat model
+ * with a `vlm` boolean. The OpenAI-compatible `GET /models` API does not expose
+ * this attribute, so the adapter ships a set of known VLM model ids extracted
+ * from the marketplace's SSR data. Catalog entries can still declare explicit
+ * `inputModalities` to override this set.
+ *
+ * **Maintenance**: this set is hand-maintained and will drift from the live
+ * marketplace as new VLM models are added or existing ones are deprecated. It is
+ * refreshed periodically. Once the OpenAI-compatible API exposes model
+ * capabilities (e.g. a `vision` sub_type or a `vlm` field in the model listing),
+ * this static set will be replaced by a runtime query.
+ *
+ * Last updated: 2026-08-22 (23 VLM models out of 88 chat models).
+ */
+const KNOWN_VLM_MODELS: ReadonlySet<string> = new Set([
+  'PaddlePaddle/PaddleOCR-VL-1.5',
+  'Pro/moonshotai/Kimi-K2.6',
+  'Qwen/Qwen3-Omni-30B-A3B-Captioner',
+  'Qwen/Qwen3-Omni-30B-A3B-Instruct',
+  'Qwen/Qwen3-Omni-30B-A3B-Thinking',
+  'Qwen/Qwen3-VL-30B-A3B-Instruct',
+  'Qwen/Qwen3-VL-30B-A3B-Thinking',
+  'Qwen/Qwen3-VL-32B-Instruct',
+  'Qwen/Qwen3-VL-32B-Thinking',
+  'Qwen/Qwen3-VL-8B-Instruct',
+  'Qwen/Qwen3-VL-8B-Thinking',
+  'Qwen/Qwen3.5-122B-A10B',
+  'Qwen/Qwen3.5-27B',
+  'Qwen/Qwen3.5-35B-A3B',
+  'Qwen/Qwen3.5-397B-A17B',
+  'Qwen/Qwen3.5-4B',
+  'Qwen/Qwen3.5-9B',
+  'Qwen/Qwen3.6-27B',
+  'Qwen/Qwen3.6-35B-A3B',
+  'deepseek-ai/DeepSeek-OCR',
+  'moonshotai/Kimi-K2.7-Code',
+  'nex-agi/Nex-N2-Pro',
+  'zai-org/GLM-4.5V',
+])
+
+/**
+ * Determine the input modalities for a SiliconFlow model id.
+ *
+ * Uses the authoritative VLM model set from the SiliconFlow marketplace rather
+ * than naming-pattern heuristics. Catalog entries can declare explicit
+ * `inputModalities` to override this lookup.
+ * @param id - the wire model id (e.g. `Qwen/Qwen3-VL-8B-Instruct`).
+ * @returns `['text', 'image']` when the id is a known VLM, `['text']` otherwise.
+ */
+export function inferInputModalities(id: string): readonly ModelModality[] {
+  return KNOWN_VLM_MODELS.has(id) ? ['text', 'image'] : ['text']
+}
+
 function modelInfo(provider: string, model: SiliconFlowCatalogModel): LlmModelInfo {
+  const explicit = model.inputModalities
+  const modalities = explicit !== undefined && explicit.length > 0 ? explicit : inferInputModalities(model.id)
   return {
     provider,
     id: model.id,
     name: model.name ?? model.id,
     ...model.description === undefined ? {} : { description: model.description },
-    inputModalities: ['text'],
+    inputModalities: modalities,
   }
 }
 
@@ -212,12 +282,13 @@ export class SiliconFlowAdapter extends LlmAdapter {
     const discovered = this.freshDiscovery(connection)?.find(entry => entry.id === model)
     const entry = configured ?? discovered
     return Promise.resolve({
-      // The chat-completions wire route is text-only regardless of catalog
-      // membership, so the uncatalogued fallback declares the same negative
-      // capability — "unknown" here would let the host accept and persist
-      // images the serializer must then reject.
+      // Uncatalogued models look up modalities from the built-in VLM model set:
+      // a VLM id like `Qwen/Qwen3-VL-8B-Instruct` declares image input so the
+      // host accepts and persists images the serializer then sends as
+      // `image_url` content parts. A non-VLM id keeps `['text']` — "unknown"
+      // here would let the host accept images the serializer must then reject.
       ...entry === undefined
-        ? { provider, id: model, name: model, inputModalities: ['text' as const] }
+        ? { provider, id: model, name: model, inputModalities: inferInputModalities(model) }
         : modelInfo(provider, entry),
       context: { contextWindow: entry?.contextWindow ?? connection.defaultContextWindow },
       defaultMaxTokens: entry?.maxTokens ?? connection.maxTokens,
@@ -289,7 +360,7 @@ export class SiliconFlowAdapter extends LlmAdapter {
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = serializeRequest(options)
+    const body = await serializeRequest(options, this.config.resolveImage)
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)

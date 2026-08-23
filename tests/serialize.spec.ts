@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, CallId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { serializeMessages, serializeRequest } from '../src/serialize.ts'
@@ -9,8 +10,8 @@ function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
 }
 
 describe('serializeMessages', () => {
-  it('maps user text to string content', () => {
-    const wire = serializeMessages([
+  it('maps user text to string content', async () => {
+    const wire = await serializeMessages([
       createUserMessage({
         content: [{ type: 'text', text: 'hello ' }, { type: 'text', text: 'world' }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -19,8 +20,8 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'hello world' }])
   })
 
-  it('maps system-role messages in history', () => {
-    const wire = serializeMessages([
+  it('maps system-role messages in history', async () => {
+    const wire = await serializeMessages([
       createMessage({
         role: 'system', content: [{ type: 'text', text: 'be brief' }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -29,8 +30,8 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'system', content: 'be brief' }])
   })
 
-  it('maps plain assistant text without reasoning_content', () => {
-    const wire = serializeMessages([
+  it('maps plain assistant text without reasoning_content', async () => {
+    const wire = await serializeMessages([
       createMessage({
         role: 'assistant',
         content: [
@@ -44,8 +45,8 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'assistant', content: 'answer' }])
   })
 
-  it('passes reasoning_content back on tool-call turns (hosted reasoning-model passback rule)', () => {
-    const wire = serializeMessages([
+  it('passes reasoning_content back on tool-call turns (hosted reasoning-model passback rule)', async () => {
+    const wire = await serializeMessages([
       createMessage({
         role: 'assistant',
         content: [
@@ -65,8 +66,8 @@ describe('serializeMessages', () => {
     }])
   })
 
-  it('serializes parallel tool calls in order', () => {
-    const wire = serializeMessages([
+  it('serializes parallel tool calls in order', async () => {
+    const wire = await serializeMessages([
       createMessage({
         role: 'assistant',
         content: [
@@ -80,8 +81,8 @@ describe('serializeMessages', () => {
     expect(assistant.tool_calls.map(call => call.id)).toEqual(['a', 'b'])
   })
 
-  it('turns tool results into role:tool messages', () => {
-    const wire = serializeMessages([
+  it('turns tool results into role:tool messages', async () => {
+    const wire = await serializeMessages([
       createUserMessage({
         content: [{
           type: 'tool-result',
@@ -94,8 +95,8 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'tool', tool_call_id: 'call-1', content: 'Sunny 22C' }])
   })
 
-  it('sends a sentinel for empty tool-result content', () => {
-    const wire = serializeMessages([
+  it('sends a sentinel for empty tool-result content', async () => {
+    const wire = await serializeMessages([
       createUserMessage({
         content: [{ type: 'tool-result', toolCallId: CallId('call-1'), content: [] }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -104,8 +105,8 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'tool', tool_call_id: 'call-1', content: '(no output)' }])
   })
 
-  it('splits mixed user text + tool results into separate wire messages', () => {
-    const wire = serializeMessages([
+  it('splits mixed user text + tool results into separate wire messages', async () => {
+    const wire = await serializeMessages([
       createUserMessage({
         content: [
           { type: 'text', text: 'context note' },
@@ -120,8 +121,8 @@ describe('serializeMessages', () => {
     ])
   })
 
-  it('skips plugin-added block types (merge-extensible ContentBlockMap)', () => {
-    const wire = serializeMessages([
+  it('skips plugin-added block types (merge-extensible ContentBlockMap)', async () => {
+    const wire = await serializeMessages([
       createUserMessage({
         content: [
           { type: 'chart', data: 'x' } as unknown as ContentBlock,
@@ -133,21 +134,196 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
   })
 
-  it('rejects image blocks instead of silently flattening them away', () => {
-    expect(() => serializeMessages([createUserMessage({
-      content: [{
-        type: 'image',
-        attachment: {
-          attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-          mediaType: 'image/png', bytes: 68, width: 1, height: 1,
-        },
-      }],
-      source: { kind: 'plugin', plugin: 'test' },
-    })])).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+  it('serializes image blocks as image_url content parts with a resolved data URL', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve('data:image/png;base64,iVBOR')
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [
+          { type: 'text', text: 'What is this?' },
+          { type: 'image', attachment: ref },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ], resolveImage)
+    expect(wire).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is this?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+      ],
+    }])
   })
 
-  it('emits an empty user message rather than dropping block-less messages', () => {
-    const wire = serializeMessages([createUserMessage({
+  it('returns image_url part when url is defined and sentinel when undefined', async () => {
+    // Direct coverage of imagePart both branches via serializeMessages.
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    // With URL: image_url part
+    const withUrl = await serializeMessages([
+      createUserMessage({ content: [{ type: 'image', attachment: ref }], source: { kind: 'plugin', plugin: 'test' } }),
+    ], () => Promise.resolve('data:image/png;base64,iVBOR'))
+    expect(withUrl[0]).toEqual({
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } }],
+    })
+    // Without URL: sentinel text part
+    const withoutUrl = await serializeMessages([
+      createUserMessage({ content: [{ type: 'image', attachment: ref }], source: { kind: 'plugin', plugin: 'test' } }),
+    ], () => Promise.resolve(undefined))
+    // oxlint-disable-next-line typescript/no-unsafe-assignment
+    expect(withoutUrl[0]).toEqual({
+      role: 'user',
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      content: [{ type: 'text', text: expect.stringContaining('[image omitted') }],
+    })
+  })
+
+  it('replaces image blocks with the offload sentinel when no resolver is provided', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [
+          { type: 'text', text: 'describe' },
+          { type: 'image', attachment: ref },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ])
+    // No resolver: image replaced with sentinel text.
+    expect(wire).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'describe' },
+        // oxlint-disable-next-line typescript/no-unsafe-assignment
+        { type: 'text', text: expect.stringContaining('[image omitted') },
+      ],
+    }])
+  })
+
+  it('replaces image blocks with the offload sentinel when the resolver returns undefined', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve(undefined)
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [
+          { type: 'image', attachment: ref },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ], resolveImage)
+    expect(wire).toEqual([{
+      role: 'user',
+      content: [
+        // oxlint-disable-next-line typescript/no-unsafe-assignment
+        { type: 'text', text: expect.stringContaining('[image omitted') },
+      ],
+    }])
+  })
+
+  it('replaces images in tool-result content with the offload sentinel', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [{
+          type: 'tool-result',
+          toolCallId: CallId('call-1'),
+          content: [
+            { type: 'text', text: 'screenshot:' },
+            { type: 'image', attachment: ref },
+          ],
+        }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ])
+    // Images in tool results are flattened to text with the sentinel.
+    const tool = wire[0] as { content: string }
+    expect(tool.content).toContain('screenshot:')
+    expect(tool.content).toContain('[image omitted')
+  })
+
+  it('preserves text blocks inside tool-result content during sentinel replacement', async () => {
+    // Tool-result with text only (no image): text is preserved.
+    // This covers replaceImagesWithSentinel's text-block (non-image) path.
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [{
+          type: 'tool-result',
+          toolCallId: CallId('call-2'),
+          content: [
+            { type: 'text', text: 'only text' },
+          ],
+        }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ])
+    const tool = wire[0] as { content: string }
+    expect(tool.content).toBe('only text')
+  })
+
+  it('replaces images in nested tool-result content', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    // Tool-result content with image only (no text) — covers L53 false path.
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [{
+          type: 'tool-result',
+          toolCallId: CallId('call-3'),
+          content: [
+            { type: 'image', attachment: ref },
+          ],
+        }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ])
+    const tool = wire[0] as { content: string }
+    expect(tool.content).toContain('[image omitted')
+  })
+
+  it('serializes image_url when resolveImage returns a data URL via serializeMessages', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve('data:image/png;base64,iVBOR')
+    const wire = await serializeMessages([
+      createUserMessage({
+        content: [{ type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ], resolveImage)
+    const user = wire[0] as { content: unknown[] }
+    expect(user.content).toEqual([
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+    ])
+  })
+
+  it('emits an empty user message rather than dropping block-less messages', async () => {
+    const wire = await serializeMessages([createUserMessage({
       content: [],
       source: { kind: 'plugin', plugin: 'test' },
     })])
@@ -161,8 +337,8 @@ describe('serializeRequest', () => {
     source: { kind: 'plugin', plugin: 'test' },
   })]
 
-  it('always streams with usage and maps the basics', () => {
-    const wire = serializeRequest(request({ messages: history }))
+  it('always streams with usage and maps the basics', async () => {
+    const wire = await serializeRequest(request({ messages: history }))
     expect(wire).toEqual({
       model: 'deepseek-ai/DeepSeek-V4-Flash',
       messages: [{ role: 'user', content: 'hi' }],
@@ -171,21 +347,21 @@ describe('serializeRequest', () => {
     })
   })
 
-  it('prepends the system prompt', () => {
-    const wire = serializeRequest(request({ messages: history, system: 'be helpful' }))
+  it('prepends the system prompt', async () => {
+    const wire = await serializeRequest(request({ messages: history, system: 'be helpful' }))
     expect(wire.messages[0]).toEqual({ role: 'system', content: 'be helpful' })
     expect(wire.messages[1]).toEqual({ role: 'user', content: 'hi' })
   })
 
-  it('maps sampling params and stop sequences', () => {
-    const wire = serializeRequest(request({ messages: history, temperature: 0.2, maxTokens: 100, stop: ['END'] }))
+  it('maps sampling params and stop sequences', async () => {
+    const wire = await serializeRequest(request({ messages: history, temperature: 0.2, maxTokens: 100, stop: ['END'] }))
     expect(wire.temperature).toBe(0.2)
     expect(wire.max_tokens).toBe(100)
     expect(wire.stop).toEqual(['END'])
   })
 
-  it('maps tools to the wire function shape', () => {
-    const wire = serializeRequest(request({
+  it('maps tools to the wire function shape', async () => {
+    const wire = await serializeRequest(request({
       messages: history,
       tools: [
         { name: 'a', description: 'A', parameters: { type: 'object', properties: {} } },
@@ -198,37 +374,80 @@ describe('serializeRequest', () => {
     ])
   })
 
-  it('omits an empty tools array', () => {
-    const wire = serializeRequest(request({ messages: history, tools: [] }))
+  it('omits an empty tools array', async () => {
+    const wire = await serializeRequest(request({ messages: history, tools: [] }))
     expect(wire.tools).toBeUndefined()
   })
 
-  it('never emits thinking or reasoning-effort fields', () => {
-    const wire = serializeRequest(request({ messages: history }))
+  it('never emits thinking or reasoning-effort fields', async () => {
+    const wire = await serializeRequest(request({ messages: history }))
     expect(wire).not.toHaveProperty('thinking')
     expect(wire).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('resolves image blocks through the resolveImage callback in serializeRequest', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    const resolveImage: (ref: ImageAttachmentRef) => Promise<string | undefined> = () => Promise.resolve('data:image/png;base64,iVBOR')
+    const wire = await serializeRequest(request({
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'look' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), resolveImage)
+    const user = wire.messages[0] as { content: unknown[] }
+    expect(user.content).toEqual([
+      { type: 'text', text: 'look' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+    ])
+  })
+
+  it('passes the resolveImage callback through serializeRequest to serializeMessages', async () => {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 68, width: 1, height: 1,
+    }
+    // serializeRequest must forward resolveImage to serializeMessages.
+    // When resolveImage returns undefined, images become sentinel text.
+    const wire = await serializeRequest(request({
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'look' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), () => Promise.resolve(undefined))
+    const user = wire.messages[0] as { content: unknown[] }
+    // oxlint-disable-next-line typescript/no-unsafe-assignment
+    expect(user.content).toEqual([
+      { type: 'text', text: 'look' },
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      { type: 'text', text: expect.stringContaining('[image omitted') },
+    ])
   })
 })
 
 describe('review fixes: assistant content shapes', () => {
-  it('serializes a content-less, tool-call-less assistant message as "" content, never null', () => {
-    const wire = serializeMessages([createMessage({
+  it('serializes a content-less, tool-call-less assistant message as "" content, never null', async () => {
+    const wire = await serializeMessages([createMessage({
       role: 'assistant', content: [],
       source: { kind: 'plugin', plugin: 'test' },
     })])
     expect(wire).toEqual([{ role: 'assistant', content: '' }])
   })
 
-  it('serializes a reasoning-ONLY assistant message as "" content with the reasoning dropped', () => {
-    const wire = serializeMessages([createMessage({
+  it('serializes a reasoning-ONLY assistant message as "" content with the reasoning dropped', async () => {
+    const wire = await serializeMessages([createMessage({
       role: 'assistant', content: [{ type: 'reasoning', text: '你好！有什么我可以帮你的吗？' }],
       source: { kind: 'plugin', plugin: 'test' },
     })])
     expect(wire).toEqual([{ role: 'assistant', content: '' }])
   })
 
-  it('serializes tool-call turns with empty string content, not null', () => {
-    const wire = serializeMessages([createMessage({
+  it('serializes tool-call turns with empty string content, not null', async () => {
+    const wire = await serializeMessages([createMessage({
       role: 'assistant',
       content: [{ type: 'tool-call', id: CallId('c'), name: 'f', arguments: '{}' }],
       source: { kind: 'plugin', plugin: 'test' },
