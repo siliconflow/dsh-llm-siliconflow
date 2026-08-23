@@ -32,10 +32,22 @@ export interface WireSystemMessage {
   content: string
 }
 
-/** User-role message: a single string of user input. */
+/** One text part in a multipart user message. */
+export interface WireTextPart {
+  type: 'text'
+  text: string
+}
+
+/** One image part in a multipart user message (OpenAI-compatible `image_url`). */
+export interface WireImagePart {
+  type: 'image_url'
+  image_url: { url: string }
+}
+
+/** A user-role message: a plain string for text-only, or an array of content parts for multimodal. */
 export interface WireUserMessage {
   role: 'user'
-  content: string
+  content: string | (WireTextPart | WireImagePart)[]
 }
 
 /** Tool-role message: the result of one tool call, keyed by its call id. */

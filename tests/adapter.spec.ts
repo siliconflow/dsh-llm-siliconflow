@@ -14,6 +14,8 @@ import LlmRuntime, { createUserMessage,
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { AttachmentStore, AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import * as LlmSiliconFlow from '../src/index.ts'
 import { DISCOVERY_TTL_MS, SiliconFlowAdapter, resolveAdapterOptions } from '../src/index.ts'
 import { httpErrorCode } from '../src/adapter.ts'
@@ -544,14 +546,21 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmSiliconFlow, { baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'siliconflow', name: 'SiliconFlow' }])
     // Without a key, discovery cannot run, so the picker falls back to the
-    // configured default catalog.
+    // configured default catalog. VLM entries declare image input modality.
     await expect(ctx.llm.listModels('siliconflow')).resolves.toEqual([
       { provider: 'siliconflow', id: 'zai-org/GLM-5.2', name: 'zai-org/GLM-5.2', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text'] },
       { provider: 'siliconflow', id: 'deepseek-ai/DeepSeek-V4-Pro', name: 'deepseek-ai/DeepSeek-V4-Pro', inputModalities: ['text'] },
       { provider: 'siliconflow', id: 'deepseek-ai/DeepSeek-V4-Flash', name: 'deepseek-ai/DeepSeek-V4-Flash', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'Pro/moonshotai/Kimi-K2.6', name: 'Pro/moonshotai/Kimi-K2.6', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'Qwen/Qwen3.5-397B-A17B', name: 'Qwen/Qwen3.5-397B-A17B', inputModalities: ['text'] },
+      { provider: 'siliconflow', id: 'Pro/zai-org/GLM-5.1', name: 'Pro/zai-org/GLM-5.1', inputModalities: ['text'] },
+      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Pro/moonshotai/Kimi-K2.6', name: 'Pro/moonshotai/Kimi-K2.6', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Qwen/Qwen3.5-397B-A17B', name: 'Qwen/Qwen3.5-397B-A17B', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'zai-org/GLM-4.5V', name: 'zai-org/GLM-4.5V', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-32B-Instruct', name: 'Qwen/Qwen3-VL-32B-Instruct', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-8B-Instruct', name: 'Qwen/Qwen3-VL-8B-Instruct', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-32B-Thinking', name: 'Qwen/Qwen3-VL-32B-Thinking', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'Qwen/Qwen3-VL-8B-Thinking', name: 'Qwen/Qwen3-VL-8B-Thinking', inputModalities: ['text', 'image'] },
+      { provider: 'siliconflow', id: 'deepseek-ai/DeepSeek-OCR', name: 'deepseek-ai/DeepSeek-OCR', inputModalities: ['text', 'image'] },
     ])
     await expect(ctx.llm.resolveModelInfo('siliconflow', MODEL))
       .resolves.toMatchObject({
@@ -581,6 +590,29 @@ describe('plugin registration and config', () => {
     })
   })
 
+  it('infers VLM modality from authoritative model set for uncatalogued models', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmSiliconFlow, {
+      baseURL: 'http://127.0.0.1:1',
+      models: [{ id: 'Qwen/Qwen3-VL-32B-Instruct', contextWindow: 131_072 }],
+    })
+    // A catalogued VLM (explicit inputModalities)
+    await expect(ctx.llm.resolveModelInfo('siliconflow', 'Qwen/Qwen3-VL-32B-Instruct'))
+      .resolves.toMatchObject({ inputModalities: ['text', 'image'] })
+    // An uncatalogued VLM from the authoritative set
+    await expect(ctx.llm.resolveModelInfo('siliconflow', 'moonshotai/Kimi-K2.7-Code'))
+      .resolves.toMatchObject({ inputModalities: ['text', 'image'] })
+    await expect(ctx.llm.resolveModelInfo('siliconflow', 'nex-agi/Nex-N2-Pro'))
+      .resolves.toMatchObject({ inputModalities: ['text', 'image'] })
+    // An uncatalogued non-VLM
+    await expect(ctx.llm.resolveModelInfo('siliconflow', 'deepseek-ai/DeepSeek-V4-Flash'))
+      .resolves.toMatchObject({ inputModalities: ['text'] })
+    // GLM-5.2 is NOT a VLM despite matching GLM naming patterns
+    await expect(ctx.llm.resolveModelInfo('siliconflow', 'zai-org/GLM-5.2'))
+      .resolves.toMatchObject({ inputModalities: ['text'] })
+  })
+
   it('advertises configured models without restricting arbitrary request ids', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -598,7 +630,8 @@ describe('plugin registration and config', () => {
     })
     await expect(ctx.llm.listModels('siliconflow')).resolves.toEqual([
       { provider: 'siliconflow', id: 'org/private-fast', name: 'org/private-fast', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'org/private-reasoner', name: 'Private Reasoner', description: 'Higher reasoning budget', inputModalities: ['text'] },
+      { provider: 'siliconflow', id: 'org/private-reasoner', name: 'Private Reasoner',
+        description: 'Higher reasoning budget', inputModalities: ['text'] },
     ])
     await expect(ctx.llm.resolveModelInfo('siliconflow', 'org/private-fast'))
       .resolves.toMatchObject({ context: { contextWindow: 32_000 } })
@@ -739,7 +772,7 @@ describe('plugin registration and config', () => {
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'siliconflow', name: 'SiliconFlow' }])
-    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(6)
+    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(13)
     const first = await assemble(ctx, { model: MODEL, messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
     const second = await assemble(ctx, { model: MODEL, messages: [] })
@@ -818,7 +851,7 @@ describe('plugin registration and config', () => {
     expect(adapter).toBeInstanceOf(SiliconFlowAdapter)
     // Direct embedding shares the plugin's one resolve step, so it advertises
     // the same default catalog instead of a divergent empty one.
-    await expect(adapter.listModels('siliconflow')).resolves.toHaveLength(6)
+    await expect(adapter.listModels('siliconflow')).resolves.toHaveLength(13)
   })
 
   it('resolves connection facts and the credential exactly once per stream call', async () => {
@@ -876,7 +909,7 @@ describe('advisory catalog discovery', () => {
 
     await expect(ctx.llm.listModels('siliconflow')).resolves.toEqual([
       { provider: 'siliconflow', id: 'zai-org/GLM-5.2', name: 'zai-org/GLM-5.2', inputModalities: ['text'] },
-      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text'] },
+      { provider: 'siliconflow', id: 'moonshotai/Kimi-K2.7-Code', name: 'moonshotai/Kimi-K2.7-Code', inputModalities: ['text', 'image'] },
     ])
     expect(server.paths).toEqual(['/models?sub_type=chat'])
     expect(server.headers[0]?.authorization).toBe('Bearer test-key')
@@ -886,7 +919,7 @@ describe('advisory catalog discovery', () => {
     const server = await mockModelsServer([{ status: 500, body: '{}' }])
     const ctx = await harness(server.url)
 
-    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(6)
+    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(13)
   })
 
   it('serves the configured catalog without a key, making no network call', async () => {
@@ -896,7 +929,7 @@ describe('advisory catalog discovery', () => {
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmSiliconFlow, { baseURL: server.url })
 
-    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(6)
+    await expect(ctx.llm.listModels('siliconflow')).resolves.toHaveLength(13)
     expect(server.paths).toEqual([])
   })
 
@@ -974,5 +1007,202 @@ describe('config-surface model discovery', () => {
     const models = await ctx.llm.discoverModels('llm-siliconflow', { provider: 'siliconflow' })
     expect(models).toEqual([{ id: 'anon' }])
     expect(server.headers[0]).not.toHaveProperty('authorization')
+  })
+})
+
+
+describe('SiliconFlowAdapter resolveImage path', () => {
+  it('serializes image_url content when resolveImage returns a data URL', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png',
+      bytes: 1, width: 1, height: 1,
+    }
+    const resolveImage = (): Promise<string | undefined> =>
+      Promise.resolve('data:image/png;base64,iVBOR')
+    const adapter = new SiliconFlowAdapter({
+      options: () => resolveAdapterOptions({ baseURL: server.url }),
+      resolveApiKey: async () => 'k',
+      resolveUserId: () => TEST_USER_ID,
+      resolveImage,
+    })
+    for await (const _chunk of adapter.stream({
+      provider: 'siliconflow',
+      model: 'moonshotai/Kimi-K2.7-Code',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'see' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })) { /* drain */ }
+
+    const body = JSON.parse(JSON.stringify(server.requests[0])) as { messages: Array<{ content: unknown }> }
+    const userContent = body.messages.at(-1)!.content
+    expect(userContent).toEqual([
+      { type: 'text', text: 'see' },
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+    ])
+  })
+
+  it('replaces images with sentinel when resolveImage returns undefined', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png',
+      bytes: 1, width: 1, height: 1,
+    }
+    const resolveImage = (): Promise<string | undefined> => Promise.resolve(undefined)
+    const adapter = new SiliconFlowAdapter({
+      options: () => resolveAdapterOptions({ baseURL: server.url }),
+      resolveApiKey: async () => 'k',
+      resolveUserId: () => TEST_USER_ID,
+      resolveImage,
+    })
+    for await (const _chunk of adapter.stream({
+      provider: 'siliconflow',
+      model: 'moonshotai/Kimi-K2.7-Code',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'see' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })) { /* drain */ }
+
+    expect(server.requests).toHaveLength(1)
+  })
+
+  it('replaces images with sentinel when resolveImage returns undefined on error', async () => {
+    // The plugin's resolveImage (index.ts) catches readImage failures and returns undefined.
+    // This test simulates that post-catch behavior: resolveImage returns undefined,
+    // and the serializer replaces the image with the sentinel text.
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png',
+      bytes: 1, width: 1, height: 1,
+    }
+    const resolveImage = (): Promise<string | undefined> => Promise.resolve(undefined)
+    const adapter = new SiliconFlowAdapter({
+      options: () => resolveAdapterOptions({ baseURL: server.url }),
+      resolveApiKey: async () => 'k',
+      resolveUserId: () => TEST_USER_ID,
+      resolveImage,
+    })
+    for await (const _chunk of adapter.stream({
+      provider: 'siliconflow',
+      model: 'moonshotai/Kimi-K2.7-Code',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'see' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })) { /* drain */ }
+
+    expect(server.requests).toHaveLength(1)
+  })
+})
+
+/** Minimal AttachmentStore implementation for plugin-level resolveImage tests. */
+class TestAttachmentStore extends AttachmentStore {
+  constructor(
+    ctx: Context,
+    private readonly fn: (ref: ImageAttachmentRef) => Promise<StoredImageAttachment>,
+  ) { super(ctx) }
+  override readImage(ref: ImageAttachmentRef): Promise<StoredImageAttachment> { return this.fn(ref) }
+}
+
+describe('plugin-level resolveImage through ctx.get(attachments)', () => {
+  it('serializes image_url when an attachment store service is registered', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    vi.stubEnv('SILICONFLOW_API_KEY', 'test-key')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png',
+      bytes: 1, width: 1, height: 1,
+    }
+    // Register attachment store so ctx.get('attachments') returns it.
+    ctx.plugin(TestAttachmentStore, async () => ({
+      ref,
+      data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    }))
+
+    await ctx.plugin(LlmSiliconFlow, { baseURL: server.url })
+    await assemble(ctx, {
+      model: 'moonshotai/Kimi-K2.7-Code',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'see' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    const body = JSON.parse(JSON.stringify(server.requests[0])) as { messages: Array<{ content: unknown }> }
+    const userContent = body.messages.at(-1)!.content
+    expect(userContent).toEqual([
+      { type: 'text', text: 'see' },
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw==' } },
+    ])
+  })
+
+  it('uses sentinel when no attachment store is registered', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    vi.stubEnv('SILICONFLOW_API_KEY', 'test-key')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmSiliconFlow, { baseURL: server.url })
+
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png',
+      bytes: 1, width: 1, height: 1,
+    }
+    await assemble(ctx, {
+      model: 'moonshotai/Kimi-K2.7-Code',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'see' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    const body = JSON.parse(JSON.stringify(server.requests[0])) as { messages: Array<{ content: unknown }> }
+    const userContent = body.messages.at(-1)!.content
+    expect(userContent).toEqual([
+      { type: 'text', text: 'see' },
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      { type: 'text', text: expect.stringContaining('[image omitted') },
+    ])
+  })
+
+  it('uses sentinel when readImage throws', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    vi.stubEnv('SILICONFLOW_API_KEY', 'test-key')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png',
+      bytes: 1, width: 1, height: 1,
+    }
+    ctx.plugin(TestAttachmentStore, async () => { throw new Error('disk gone') })
+
+    await ctx.plugin(LlmSiliconFlow, { baseURL: server.url })
+    await assemble(ctx, {
+      model: 'moonshotai/Kimi-K2.7-Code',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'see' }, { type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    const body = JSON.parse(JSON.stringify(server.requests[0])) as { messages: Array<{ content: unknown }> }
+    const userContent = body.messages.at(-1)!.content
+    expect(userContent).toEqual([
+      { type: 'text', text: 'see' },
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      { type: 'text', text: expect.stringContaining('[image omitted') },
+    ])
   })
 })

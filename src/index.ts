@@ -8,14 +8,19 @@
  * restarting anything, while an in-flight stream keeps the facts it started
  * with. The one registration-captured fact — the retry policy — re-registers
  * the route in place when it changes.
+ *
+ * When the optional `ctx.attachments` service is mounted, image blocks in user
+ * messages are resolved to base64 data URLs and serialized as OpenAI-compatible
+ * `image_url` content parts, enabling VLM models (Qwen3-VL, GLM-4.5V, etc.).
  * @module @siliconflow-official/dsh-llm-siliconflow
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { LlmModelDiscoveryRequest, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmModelDiscoveryRequest, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -36,6 +41,7 @@ export {
   DISCOVERY_TTL_MS,
   SiliconFlowAdapter,
 } from './adapter.ts'
+export { inferInputModalities } from './adapter.ts'
 export { discoverChatModels, listingUrl, readListing } from './discovery.ts'
 export type { SiliconFlowListingEntry } from './discovery.ts'
 export type { SiliconFlowAdapterOptions, SiliconFlowCatalogModel, SiliconFlowConnectionOptions } from './adapter.ts'
@@ -50,14 +56,34 @@ export const DEFAULT_API_KEY_ENV = 'SILICONFLOW_API_KEY'
 /** The single provider route this plugin owns. */
 export const PROVIDER = 'siliconflow'
 
-/** Fallback advisory catalog: six widely hosted chat models, also the setup CLI's discovery fallback. */
+/**
+ * Fallback advisory catalog: widely hosted chat models including VLMs, also the
+ * setup CLI's discovery fallback.
+ *
+ * **Static data** — the `contextWindow` values and VLM flags are extracted from
+ * the SiliconFlow model marketplace (siliconflow.cn/models). The live
+ * `GET /models?sub_type=chat` API does not return context window or VLM metadata,
+ * so these fields are maintained by hand. This catalog will be kept in sync with
+ * the marketplace until the API exposes these attributes natively.
+ *
+ * Last updated: 2026-08-22. VLM entries declare `inputModalities` explicitly.
+ */
 export const DEFAULT_MODELS: SiliconFlowCatalogModel[] = [
+  // Text-only models
   { id: 'zai-org/GLM-5.2', contextWindow: 1_000_000 },
-  { id: 'moonshotai/Kimi-K2.7-Code', contextWindow: 256_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Pro', contextWindow: 1_000_000 },
   { id: 'deepseek-ai/DeepSeek-V4-Flash', contextWindow: 1_000_000 },
-  { id: 'Pro/moonshotai/Kimi-K2.6', contextWindow: 256_000 },
-  { id: 'Qwen/Qwen3.5-397B-A17B', contextWindow: 256_000 },
+  { id: 'Pro/zai-org/GLM-5.1', contextWindow: 202_752 },
+  // VLM models — declare inputModalities explicitly (matches marketplace vlm:true)
+  { id: 'moonshotai/Kimi-K2.7-Code', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Pro/moonshotai/Kimi-K2.6', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3.5-397B-A17B', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'zai-org/GLM-4.5V', contextWindow: 65_536, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-32B-Instruct', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-8B-Instruct', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-32B-Thinking', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'Qwen/Qwen3-VL-8B-Thinking', contextWindow: 262_144, inputModalities: ['text', 'image'] },
+  { id: 'deepseek-ai/DeepSeek-OCR', contextWindow: 8_192, inputModalities: ['text', 'image'] },
 ]
 
 /**
@@ -76,7 +102,7 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 32,768). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to six widely hosted models. */
+  /** Advisory models shown by discovery consumers; defaults to widely hosted models including VLMs. */
   models?: SiliconFlowCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
@@ -84,12 +110,15 @@ export interface Config {
   retryPolicy?: RetryPolicyConfig
 }
 
+const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+
 const catalogModel: z<SiliconFlowCatalogModel> = z.object({
   id: z.string().required(),
   name: z.string(),
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
+  inputModalities: z.array(z.union(MODEL_MODALITIES)),
 })
 
 export const Config: z<Config> = z.object({
@@ -144,6 +173,7 @@ function resolveModels(models: readonly SiliconFlowCatalogModel[] | undefined): 
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      ...model.inputModalities === undefined || model.inputModalities.length === 0 ? {} : { inputModalities: model.inputModalities },
     }
   })
 }
@@ -238,6 +268,25 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  /**
+   * Resolve one image attachment to a base64 data URL for wire serialization.
+   * Uses the optional `ctx.attachments` service; returns `undefined` when the
+   * store is not mounted or the read fails, so the serializer substitutes the
+   * `OFFLOADED_IMAGE_TEXT` sentinel instead of blocking the request.
+   */
+  const resolveImage = async (ref: ImageAttachmentRef): Promise<string | undefined> => {
+    const attachments = ctx.get('attachments')
+    if (attachments === undefined) return undefined
+    try {
+      const { data } = await attachments.readImage(ref)
+      return `data:${ref.mediaType};base64,${Buffer.from(data).toString('base64')}`
+    } catch {
+      // A failed read is not fatal: the serializer replaces the image with the
+      // sentinel text, so the request proceeds without that image.
+      return undefined
+    }
+  }
+
   let userId: AnonymousUserId | undefined
   const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
   // The stored key is read only past the point a discovery is actually asked
@@ -254,7 +303,7 @@ export function apply(ctx: Context, config: Config): void {
     const ambient = launchEnvironmentOf(ctx).get(ref)
     return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
   }
-  const adapter = new SiliconFlowAdapter({ options, resolveApiKey, resolveUserId })
+  const adapter = new SiliconFlowAdapter({ options, resolveApiKey, resolveUserId, resolveImage })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'SiliconFlow', settingsNs: NS, settingsPath: [] },
   ])
