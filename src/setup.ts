@@ -14,7 +14,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { parseDocument } from 'yaml'
+import { Pair, parseDocument, YAMLMap } from 'yaml'
 import type { SiliconFlowListingEntry } from './discovery.ts'
 import { DEFAULT_API_KEY_ENV, DEFAULT_MODELS, PROVIDER } from './index.ts'
 
@@ -81,11 +81,106 @@ function isEnoent(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
 
+/** The credentials document layout version this wizard reads and writes. */
+const CREDENTIALS_LAYOUT_VERSION = 1
+
+/** POSIX identifier rule the credentials seam addresses references by. */
+const REF_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
 /**
- * Read one credential reference from a comment-preserving document.
+ * A credentials document this wizard can act on: either the versioned layout
+ * `dsh-credentials-local` ≥ 0.1.2 requires (`version: 1` with a `refs`
+ * section), or the pre-release flat layout this wizard itself wrote before it
+ * learned the versioned one — still on disk for users who have not re-run
+ * setup. Anything else stays untouched: rewriting a document this build cannot
+ * prove it understands would read as "the credential I stored has no effect".
+ */
+interface AdmittedCredentials {
+  /** The layout the document was recognized as. */
+  readonly kind: 'versioned' | 'flat'
+  /** Every reference the document holds, in document order. */
+  readonly entries: ReadonlyMap<string, string>
+  /**
+   * Top-level keys a pre-fix release of this wizard wrote beside `version`,
+   * which the version-1 layout cannot address and every dsh ≥ 0.1.2 boot
+   * rejects; folded into `refs` by the write path so one wizard run repairs
+   * the file its predecessor corrupted. Absent otherwise.
+   */
+  readonly extraKeys?: ReadonlyMap<string, string>
+}
+
+/**
+ * Recognize one parsed credentials document.
+ * @param document - the parsed document; parse errors make it unrecognizable.
+ * @returns the admitted layout with its references — plus, under `extraKeys`,
+ *   any top-level key a pre-fix release of this wizard left beside `version`,
+ *   held out of `entries` so reads treat them as absent while the write path
+ *   folds them back under `refs` — or `undefined` when the document does not
+ *   parse, holds an unknown `version`, carries a `refs` section that is not a
+ *   mapping of reference names to non-empty strings, or holds any other
+ *   top-level entry this build cannot attribute to its own predecessor.
+ */
+function admitCredentialsDocument(document: ParsedDocument): AdmittedCredentials | undefined {
+  if (document.errors.length > 0) return undefined
+  const root: unknown = document.toJS() ?? {}
+  if (typeof root !== 'object' || root === null) return undefined
+  const fields = root as Record<string, unknown>
+  const entries = new Map<string, string>()
+  if (!('version' in fields)) {
+    for (const [key, value] of Object.entries(fields)) {
+      if (!REF_NAME_PATTERN.test(key)) return undefined
+      if (typeof value !== 'string' || value.length === 0) return undefined
+      entries.set(key, value)
+    }
+    return { kind: 'flat', entries }
+  }
+  if (fields.version !== CREDENTIALS_LAYOUT_VERSION) return undefined
+  const refs = fields['refs']
+  if (refs !== undefined) {
+    if (typeof refs !== 'object' || refs === null) return undefined
+    for (const [key, value] of Object.entries(refs)) {
+      if (!REF_NAME_PATTERN.test(key)) return undefined
+      if (typeof value !== 'string' || value.length === 0) return undefined
+      entries.set(key, value)
+    }
+  }
+  // An unknown top-level key makes the whole document unreadable for dsh ≥
+  // 0.1.2 (unknown top-level key), so this is never "leave it alone" territory:
+  // either it is exactly a POSIX identifier over a non-empty string — the
+  // deterministic fingerprint of what a pre-fix release of this wizard wrote —
+  // and the write path repairs the file by folding it into `refs`, or the
+  // document is one this build cannot prove it understands and refuses to touch.
+  const extraKeys = new Map<string, string>()
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === 'version' || key === 'refs' || key === 'records') continue
+    if (!REF_NAME_PATTERN.test(key) || typeof value !== 'string' || value.length === 0) return undefined
+    extraKeys.set(key, value)
+  }
+  return { kind: 'versioned', entries, ...extraKeys.size > 0 ? { extraKeys } : {} }
+}
+
+/**
+ * Nest a pre-release flat document under `refs:` with a `version` stamp. The
+ * whole current root — every flat entry, comments included — becomes the
+ * `refs` section verbatim, so every other provider's key migrates in the same
+ * write; the new root carries `version` and `refs` in that order, matching how
+ * `dsh-credentials-local` writes one from scratch.
+ * @param document - the admitted flat document to upgrade in place.
+ */
+function upgradeFlatDocument(document: ParsedDocument): void {
+  const refs = document.contents instanceof YAMLMap ? document.contents : new YAMLMap()
+  const root = new YAMLMap()
+  root.add(new Pair('version', CREDENTIALS_LAYOUT_VERSION))
+  root.add(new Pair('refs', refs))
+  document.contents = root
+}
+
+/**
+ * Read one credential reference from a versioned or pre-release flat document.
  * @param path - the credentials document path.
- * @param keyEnv - the top-level reference name (e.g. `SILICONFLOW_API_KEY`).
- * @returns the stored value, or `undefined` when absent or the file is missing.
+ * @param keyEnv - the reference name to read (e.g. `SILICONFLOW_API_KEY`).
+ * @returns the stored value, or `undefined` when the reference is absent, the
+ *   file is missing, or the document is not a recognizable layout.
  */
 export async function readCredential(path: string, keyEnv: string): Promise<string | undefined> {
   let text: string
@@ -95,20 +190,44 @@ export async function readCredential(path: string, keyEnv: string): Promise<stri
     if (isEnoent(error)) return undefined
     throw error
   }
-  const root: unknown = parseDocument(text).toJS()
-  const value = (root as Record<string, unknown> | null)?.[keyEnv]
-  return typeof value === 'string' && value.length > 0 ? value : undefined
+  const admitted = admitCredentialsDocument(parseDocument(text))
+  if (admitted === undefined) return undefined
+  return admitted.entries.get(keyEnv)
 }
 
 /**
- * Set one credential reference, preserving every other entry and comment.
+ * Write one credential reference into the versioned layout, preserving every
+ * other entry and comment. A pre-release flat document is upgraded in place,
+ * and a top-level key a pre-fix release of this wizard left beside `version`
+ * is folded back under `refs`, so one run repairs the file its predecessor
+ * corrupted. An unrecognized document fails loud instead of being rewritten —
+ * a silent rewrite would hide why the running harness rejects it.
  * @param path - the credentials document path; created when absent.
- * @param keyEnv - the top-level reference name to write.
+ * @param keyEnv - the reference name to write.
  * @param key - the value.
+ * @throws when the document exists but is not a recognizable credentials layout.
  */
 export async function writeCredential(path: string, keyEnv: string, key: string): Promise<void> {
   const doc = await loadDocument(path)
-  doc.set(keyEnv, key)
+  const admitted = admitCredentialsDocument(doc)
+  if (admitted === undefined) {
+    throw new Error(
+      `setup: ${path} is not a recognizable credentials document`
+      + ' (expected version 1 with a refs section, or the pre-release flat layout); fix it before running setup',
+    )
+  }
+  if (admitted.kind === 'flat') upgradeFlatDocument(doc)
+  // Fold each recognized own-artifact top-level key into `refs`, where the
+  // version-1 layout can address it and the next dsh boot accepts the document
+  // again; remove it from the top level first so the file is left with one
+  // layout, not a hybrid.
+  for (const extra of admitted.extraKeys?.keys() ?? []) doc.deleteIn([extra])
+  // Restore each folded key under `refs` first, so this write's own entry —
+  // which may be the same reference the predecessor corrupted — lands last and
+  // the user's fresh value wins over the stale one.
+  for (const [extra, value] of admitted.extraKeys ?? new Map<string, string>()) doc.setIn(['refs', extra], value)
+  doc.setIn(['version'], CREDENTIALS_LAYOUT_VERSION)
+  doc.setIn(['refs', keyEnv], key)
   await persistDocument(path, doc)
 }
 

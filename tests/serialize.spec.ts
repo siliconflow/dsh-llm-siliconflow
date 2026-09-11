@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, CallId, createMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { serializeMessages, serializeRequest } from '../src/serialize.ts'
 
@@ -51,7 +51,7 @@ describe('serializeMessages', () => {
         role: 'assistant',
         content: [
           { type: 'reasoning', text: 'I should check the weather.' },
-          { type: 'tool-call', id: CallId('call-1'), name: 'get_weather', arguments: '{"city":"Paris"}' },
+          { type: 'tool-call', id: ToolCallId('call-1'), name: 'get_weather', arguments: '{"city":"Paris"}' },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
@@ -71,8 +71,8 @@ describe('serializeMessages', () => {
       createMessage({
         role: 'assistant',
         content: [
-          { type: 'tool-call', id: CallId('a'), name: 'one', arguments: '{}' },
-          { type: 'tool-call', id: CallId('b'), name: 'two', arguments: '{}' },
+          { type: 'tool-call', id: ToolCallId('a'), name: 'one', arguments: '{}' },
+          { type: 'tool-call', id: ToolCallId('b'), name: 'two', arguments: '{}' },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
@@ -86,7 +86,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('call-1'),
+          toolCallId: ToolCallId('call-1'),
           content: [{ type: 'text', text: 'Sunny 22C' }],
         }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -98,7 +98,7 @@ describe('serializeMessages', () => {
   it('sends a sentinel for empty tool-result content', async () => {
     const wire = await serializeMessages([
       createUserMessage({
-        content: [{ type: 'tool-result', toolCallId: CallId('call-1'), content: [] }],
+        content: [{ type: 'tool-result', toolCallId: ToolCallId('call-1'), content: [] }],
         source: { kind: 'plugin', plugin: 'test' },
       }),
     ])
@@ -110,7 +110,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [
           { type: 'text', text: 'context note' },
-          { type: 'tool-result', toolCallId: CallId('call-1'), content: [{ type: 'text', text: 'ok' }] },
+          { type: 'tool-result', toolCallId: ToolCallId('call-1'), content: [{ type: 'text', text: 'ok' }] },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
@@ -178,7 +178,6 @@ describe('serializeMessages', () => {
     const withoutUrl = await serializeMessages([
       createUserMessage({ content: [{ type: 'image', attachment: ref }], source: { kind: 'plugin', plugin: 'test' } }),
     ], () => Promise.resolve(undefined))
-    // oxlint-disable-next-line typescript/no-unsafe-assignment
     expect(withoutUrl[0]).toEqual({
       role: 'user',
       // oxlint-disable-next-line typescript/no-unsafe-assignment
@@ -246,7 +245,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('call-1'),
+          toolCallId: ToolCallId('call-1'),
           content: [
             { type: 'text', text: 'screenshot:' },
             { type: 'image', attachment: ref },
@@ -268,7 +267,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('call-2'),
+          toolCallId: ToolCallId('call-2'),
           content: [
             { type: 'text', text: 'only text' },
           ],
@@ -291,7 +290,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('call-3'),
+          toolCallId: ToolCallId('call-3'),
           content: [
             { type: 'image', attachment: ref },
           ],
@@ -420,7 +419,6 @@ describe('serializeRequest', () => {
       })],
     }), () => Promise.resolve(undefined))
     const user = wire.messages[0] as { content: unknown[] }
-    // oxlint-disable-next-line typescript/no-unsafe-assignment
     expect(user.content).toEqual([
       { type: 'text', text: 'look' },
       // oxlint-disable-next-line typescript/no-unsafe-assignment
@@ -449,7 +447,7 @@ describe('review fixes: assistant content shapes', () => {
   it('serializes tool-call turns with empty string content, not null', async () => {
     const wire = await serializeMessages([createMessage({
       role: 'assistant',
-      content: [{ type: 'tool-call', id: CallId('c'), name: 'f', arguments: '{}' }],
+      content: [{ type: 'tool-call', id: ToolCallId('c'), name: 'f', arguments: '{}' }],
       source: { kind: 'plugin', plugin: 'test' },
     })])
     expect(wire[0]).toMatchObject({ content: '' })

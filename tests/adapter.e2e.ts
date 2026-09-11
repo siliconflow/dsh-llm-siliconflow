@@ -50,7 +50,7 @@ describe.skipIf(!process.env.SILICONFLOW_API_KEY)('llm-siliconflow e2e (real API
     if (key === undefined) throw new Error('e2e ran without SILICONFLOW_API_KEY')
     const dir = await mkdtemp(join(tmpdir(), 'dsh-e2e-siliconflow-credentials-'))
     try {
-      await writeFile(join(dir, '.credentials.yaml'), `SILICONFLOW_API_KEY: ${JSON.stringify(key)}\n`, { mode: 0o600 })
+      await writeFile(join(dir, '.credentials.yaml'), `version: 1\nrefs:\n  SILICONFLOW_API_KEY: ${JSON.stringify(key)}\n`, { mode: 0o600 })
       vi.stubEnv('SILICONFLOW_API_KEY', '')
       const ctx = new Context()
       contexts.push(ctx)

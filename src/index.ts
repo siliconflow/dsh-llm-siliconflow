@@ -18,11 +18,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { LlmModelDiscoveryRequest, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmModelDiscoveryOperation, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
@@ -50,7 +51,7 @@ export type * from './types.ts'
 export const name = 'llm-siliconflow'
 export const inject = ['llm']
 
-const NS = settingsNamespace('llm-siliconflow')
+const NS = 'llm-siliconflow'
 /** Credential reference this plugin reads by default, also used by the setup CLI. */
 export const DEFAULT_API_KEY_ENV = 'SILICONFLOW_API_KEY'
 /** The single provider route this plugin owns. */
@@ -310,7 +311,7 @@ export function apply(ctx: Context, config: Config): void {
   // The config surface's "fetch available models" action interrogates the
   // endpoint in endpoint order, filtered to chat models; a key typed into the
   // form wins over the stored one, matching the surface's draft semantics.
-  ctx.llm.registerModelDiscovery(NS, async (request: LlmModelDiscoveryRequest) => {
+  ctx.llm.registerModelDiscovery(NS, async (request: LlmModelDiscoveryOperation) => {
     const baseURL = request.baseURL ?? options().baseURL
     const apiKey = request.apiKey ?? await storedApiKey()
     return discoverChatModels(baseURL, apiKey, request.signal)
@@ -331,10 +332,12 @@ export function apply(ctx: Context, config: Config): void {
     registeredPolicy = policy
   }
 
-  installSettingsSection(ctx, NS, Config, config, {
-    setSource: (source) => {
-      current = source
-    },
-    onChange: ensureRegistrationFacts,
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(ctx, NS, Config, config, {
+      setSource: (source) => {
+        current = source
+      },
+      onChange: ensureRegistrationFacts,
+    })
   })
 }

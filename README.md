@@ -34,6 +34,14 @@ dsh-siliconflow-setup
 export SILICONFLOW_API_KEY=sk-...   # 或写入 $DSH_HOME/.credentials.yaml
 ```
 
+写入 `.credentials.yaml` 时使用 dsh ≥ 0.1.2 的 version-1 布局（`version: 1` + `refs:` 嵌套）；向导会识别并就地升级本向导早期版本写入的 pre-release 顶层扁平布局，其他无法识别的文档会明确报错而不是被改写：
+
+```yaml
+version: 1
+refs:
+  SILICONFLOW_API_KEY: sk-...
+```
+
 在包发布到 npm 之前，先用 `pnpm install && pnpm build` 构建出 `lib/`，再从本地路径安装：
 
 ```sh

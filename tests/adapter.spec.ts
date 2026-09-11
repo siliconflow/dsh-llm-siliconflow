@@ -1040,7 +1040,6 @@ describe('SiliconFlowAdapter resolveImage path', () => {
     const userContent = body.messages.at(-1)!.content
     expect(userContent).toEqual([
       { type: 'text', text: 'see' },
-      // oxlint-disable-next-line typescript/no-unsafe-assignment
       { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
     ])
   })
@@ -1141,7 +1140,6 @@ describe('plugin-level resolveImage through ctx.get(attachments)', () => {
     const userContent = body.messages.at(-1)!.content
     expect(userContent).toEqual([
       { type: 'text', text: 'see' },
-      // oxlint-disable-next-line typescript/no-unsafe-assignment
       { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw==' } },
     ])
   })
