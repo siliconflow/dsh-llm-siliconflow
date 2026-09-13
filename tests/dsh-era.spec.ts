@@ -103,7 +103,7 @@ describe('assembleSettingsSection (era-adaptive settings install)', () => {
   })
 
   it('fails loud when the service exposes neither installer', () => {
-    expect(() => assembleSettingsSection({}, { ...base, setSource: hooks.setSource, onChange: hooks.onChange })).toThrow('neither installSection')
+    expect(() => { assembleSettingsSection({}, { ...base, setSource: hooks.setSource, onChange: hooks.onChange }) }).toThrow('neither installSection')
   })
 
   it('prefers the NEW-era method when both exist (forward-correct under mixed closure)', () => {

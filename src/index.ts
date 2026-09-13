@@ -371,13 +371,12 @@ export function assembleSettingsSection<T>(service: EraSettingsService, args: {
   entry: T
 } & EraSettingsHooks<T>): void {
   const hooks: EraSettingsHooks<T> = { setSource: args.setSource, onChange: args.onChange }
-  const ns = args.ns as import('./dsh-era.ts').SettingsNamespaceInput
   if (typeof service.installSection === 'function') {
-    service.installSection(args.owner, ns, args.schema, args.entry, hooks)
+    service.installSection(args.owner, args.ns, args.schema, args.entry, hooks)
     return
   }
   if (typeof service.installSettingsSection === 'function') {
-    service.installSettingsSection(args.owner, ns, args.schema, args.entry, hooks)
+    service.installSettingsSection(args.owner, args.ns, args.schema, args.entry, hooks)
     return
   }
   throw new Error('settings service exposes neither installSection (new era) nor installSettingsSection (old era)')

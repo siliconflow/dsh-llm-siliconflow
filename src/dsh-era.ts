@@ -98,8 +98,8 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
   const ak = Object.keys(ao)
   const bk = Object.keys(bo)
   if (ak.length !== bk.length) return false
-  if (!ak.every((k) => k in bo)) return false
-  return ak.every((k) => deepEqualJson(ao[k], bo[k]))
+  if (!ak.every(k => k in bo)) return false
+  return ak.every(k => deepEqualJson(ao[k], bo[k]))
 }
 
 /**
