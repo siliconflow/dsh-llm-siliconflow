@@ -15,7 +15,7 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { AttachmentStore, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, ImageAttachmentLimits, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import * as LlmSiliconFlow from '../src/index.ts'
 import { DISCOVERY_TTL_MS, SiliconFlowAdapter, resolveAdapterOptions } from '../src/index.ts'
 import { httpErrorCode } from '../src/adapter.ts'
@@ -1107,6 +1107,22 @@ class TestAttachmentStore extends AttachmentStore {
     private readonly fn: (ref: ImageAttachmentRef) => Promise<StoredImageAttachment>,
   ) { super(ctx) }
   override readImage(ref: ImageAttachmentRef): Promise<StoredImageAttachment> { return this.fn(ref) }
+  readonly imageLimits: ImageAttachmentLimits = {
+    maxImageBytes: 2 ** 24,
+    maxImagesPerMessage: 4,
+    maxMessageImageBytes: 2 ** 24,
+    maxImagePixels: 2 ** 22,
+    maxImageDimension: 4096,
+    mediaTypes: ['image/png'],
+  }
+  override async validateImage(): Promise<void> {}
+  override saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+    const ref: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+    }
+    return Promise.resolve(ref)
+  }
 }
 
 describe('plugin-level resolveImage through ctx.get(attachments)', () => {

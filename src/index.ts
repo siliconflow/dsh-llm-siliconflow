@@ -18,12 +18,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { LlmModelDiscoveryOperation, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
-import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
+import { deepEqualJson, type EraSettingsHooks, type EraSettingsService } from './dsh-era.ts'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
@@ -34,6 +34,7 @@ import {
 } from './adapter.ts'
 import type { SiliconFlowCatalogModel, SiliconFlowConnectionOptions } from './adapter.ts'
 import { discoverChatModels } from './discovery.ts'
+import type { ModelDiscoveryShape } from './dsh-era.ts'
 
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -311,7 +312,12 @@ export function apply(ctx: Context, config: Config): void {
   // The config surface's "fetch available models" action interrogates the
   // endpoint in endpoint order, filtered to chat models; a key typed into the
   // form wins over the stored one, matching the surface's draft semantics.
-  ctx.llm.registerModelDiscovery(NS, async (request: LlmModelDiscoveryOperation) => {
+  // One behavior serves both eras: the callback reads baseURL, apiKey, and
+  // signal. In the old era the caller passes LlmModelDiscoveryRequest (signal
+  // present as a field); in the new era it passes LlmModelDiscoveryOperation
+  // (same field, optional). dsh-era's ModelDiscoveryShape types the overlap
+  // without importing an era-specific name.
+  ctx.llm.registerModelDiscovery(NS, async (request: ModelDiscoveryShape) => {
     const baseURL = request.baseURL ?? options().baseURL
     const apiKey = request.apiKey ?? await storedApiKey()
     return discoverChatModels(baseURL, apiKey, request.signal)
@@ -332,12 +338,47 @@ export function apply(ctx: Context, config: Config): void {
     registeredPolicy = policy
   }
 
+  // Settings assembly, era-adaptive: the NEW era exposes installSection on the
+  // injected settings service; the OLD era exports installSettingsSection as a
+  // module-level function. The signatures are identical (owner, ns, schema,
+  // entry, hooks) — only the mount point moved between eras. The service shape
+  // is probed at runtime; both eras fail loud when neither installer exists.
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, NS, Config, config, {
+    assembleSettingsSection(settingsCtx.settings as unknown as EraSettingsService, {
+      owner: ctx,
+      ns: NS,
+      schema: Config,
+      entry: config,
       setSource: (source) => {
         current = source
       },
       onChange: ensureRegistrationFacts,
     })
   })
+}
+
+/**
+ * Install the settings section through whichever install surface the running
+ * settings service exposes. NEW era: service method `installSection`. OLD
+ * era: module function `installSettingsSection`, re-exported by the service
+ * object. Method-call form in both cases — detaching the function from the
+ * service loses its registrations. Fails loud when neither surface exists.
+ */
+export function assembleSettingsSection<T>(service: EraSettingsService, args: {
+  owner: Context
+  ns: string
+  schema: unknown
+  entry: T
+} & EraSettingsHooks<T>): void {
+  const hooks: EraSettingsHooks<T> = { setSource: args.setSource, onChange: args.onChange }
+  const ns = args.ns as import('./dsh-era.ts').SettingsNamespaceInput
+  if (typeof service.installSection === 'function') {
+    service.installSection(args.owner, ns, args.schema, args.entry, hooks)
+    return
+  }
+  if (typeof service.installSettingsSection === 'function') {
+    service.installSettingsSection(args.owner, ns, args.schema, args.entry, hooks)
+    return
+  }
+  throw new Error('settings service exposes neither installSection (new era) nor installSettingsSection (old era)')
 }
