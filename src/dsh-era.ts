@@ -140,6 +140,19 @@ export interface EraSettingsHooks<T> {
  */
 export type SettingsNamespaceInput = string
 
+import * as settingsModule from '@deepseek-ai/dsh-settings'
+
+/**
+ * The settings package namespace as a plain record. The OLD era exports
+ * installSettingsSection as a MODULE-LEVEL function (it performs its own
+ * ctx.inject(['settings']) internally); the NEW era dropped that export and
+ * moved the installer onto the service class as installSection. Era probes
+ * must consult BOTH surfaces: the module namespace for the old path, the
+ * service object for the new one — probing only one proved wrong against
+ * real packages (verified against 0.1.1-rc.2 and 0.1.5-rc.2 tarballs).
+ */
+export const dshSettings = settingsModule as unknown as Record<string, unknown>
+
 /**
  * The era-union settings service seen by the plugin: the NEW era exposes
  * installSection as a service method; the OLD era exported

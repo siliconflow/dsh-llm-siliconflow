@@ -23,7 +23,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
-import { deepEqualJson, type EraSettingsHooks, type EraSettingsService } from './dsh-era.ts'
+import { dshSettings, deepEqualJson, type EraSettingsHooks, type EraSettingsService } from './dsh-era.ts'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
@@ -358,11 +358,23 @@ export function apply(ctx: Context, config: Config): void {
 }
 
 /**
- * Install the settings section through whichever install surface the running
- * settings service exposes. NEW era: service method `installSection`. OLD
- * era: module function `installSettingsSection`, re-exported by the service
- * object. Method-call form in both cases — detaching the function from the
- * service loses its registrations. Fails loud when neither surface exists.
+ * Install the settings through whichever surface the running era exposes.
+ *
+ * NEW era (dsh-settings 0.1.2+): the injected settings SERVICE carries the
+ * installer as the method `installSection` — invoked as a method so the
+ * service's registration state stays bound.
+ *
+ * OLD era (dsh-settings 0.1.1): the installer is the MODULE-LEVEL function
+ * `installSettingsSection` from '@deepseek-ai/dsh-settings' — it performs
+ * its own ctx.inject(['settings']) internally, so it is called directly with
+ * (owner, ns, schema, entry, hooks). No service argument is involved.
+ *
+ * Probing taught against real packages (0.1.1-rc.2 / 0.1.5-rc.2 tarballs):
+ * the OLD service object has NO installSettingsSection member, and the NEW
+ * module has NO installSettingsSection export — probing a single surface
+ * would throw on the other era. Both surfaces are checked in order; when
+ * the running dsh exposes neither, this fails loud instead of silently
+ * dropping the section.
  */
 export function assembleSettingsSection<T>(service: EraSettingsService, args: {
   owner: Context
@@ -370,14 +382,14 @@ export function assembleSettingsSection<T>(service: EraSettingsService, args: {
   schema: unknown
   entry: T
 } & EraSettingsHooks<T>): void {
-  const hooks: EraSettingsHooks<T> = { setSource: args.setSource, onChange: args.onChange }
   if (typeof service.installSection === 'function') {
-    service.installSection(args.owner, args.ns, args.schema, args.entry, hooks)
+    service.installSection(args.owner, args.ns, args.schema, args.entry, args)
     return
   }
-  if (typeof service.installSettingsSection === 'function') {
-    service.installSettingsSection(args.owner, args.ns, args.schema, args.entry, hooks)
+  const oldInstall = dshSettings['installSettingsSection'] as ((owner: Context, ns: string, schema: unknown, entry: unknown, hooks: EraSettingsHooks<unknown>) => void) | undefined
+  if (typeof oldInstall === 'function') {
+    oldInstall(args.owner, args.ns, args.schema, args.entry, args as EraSettingsHooks<unknown>)
     return
   }
-  throw new Error('settings service exposes neither installSection (new era) nor installSettingsSection (old era)')
+  throw new Error('settings install: neither service.installSection (new era) nor module installSettingsSection (old era) is available')
 }

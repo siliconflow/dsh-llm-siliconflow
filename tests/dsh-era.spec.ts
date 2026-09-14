@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deepEqualJson, dshLLM, isNewEra, toolCallIdOf, type ModelDiscoveryShape } from '../src/dsh-era.ts'
+import { deepEqualJson, dshLLM, dshSettings, isNewEra, toolCallIdOf, type ModelDiscoveryShape } from '../src/dsh-era.ts'
 import * as llm from '@deepseek-ai/dsh-llm'
 import { assembleSettingsSection } from '../src/index.ts'
 
@@ -84,35 +84,50 @@ describe('assembleSettingsSection (era-adaptive settings install)', () => {
   const base = { owner: {} as unknown as import('@deepseek-ai/cordis').Context, ns: 'llm-siliconflow', schema: {}, entry: { a: 1 } }
   const hooks = { setSource: () => {}, onChange: () => {} }
 
-  it('routes through installSection when the NEW-era method is present', () => {
+  it('routes through installSection when the NEW-era service method is present', () => {
     const calls: string[] = []
     const service = {
-      installSection: (o: unknown, ns: string, sch: unknown, entry: unknown, h: object) => { void o; void ns; void sch; void entry; void h; calls.push('new') },
+      installSection: (owner: unknown, ns: string, schema: unknown, entry: unknown, hooks: object) => { void owner; void schema; void entry; void hooks; calls.push('new:' + ns) },
     }
     assembleSettingsSection(service, { ...base, setSource: hooks.setSource, onChange: hooks.onChange })
-    expect(calls).toEqual(['new'])
+    expect(calls).toEqual(['new:llm-siliconflow'])
   })
 
-  it('routes through installSettingsSection for an OLD-era service', () => {
+  it('routes through the MODULE-level installSettingsSection when the service carries no method and the old-era export exists', () => {
     const calls: string[] = []
-    const service = {
-      installSettingsSection: () => { calls.push('old') },
+    const service = {} // OLD-era service object: has NO install members
+    const saved = dshSettings['installSettingsSection']
+    dshSettings['installSettingsSection'] = (owner: unknown, ns: string, schema: unknown, entry: unknown, hooks: object) => { void owner; void schema; void entry; void hooks; calls.push('old-module:' + ns) }
+    try {
+      assembleSettingsSection(service, { ...base, setSource: hooks.setSource, onChange: hooks.onChange })
+    } finally {
+      if (saved === undefined) delete dshSettings['installSettingsSection']
+      else dshSettings['installSettingsSection'] = saved
     }
-    assembleSettingsSection(service, { ...base, setSource: hooks.setSource, onChange: hooks.onChange })
-    expect(calls).toEqual(['old'])
+    expect(calls).toEqual(['old-module:llm-siliconflow'])
   })
 
-  it('fails loud when the service exposes neither installer', () => {
-    expect(() => { assembleSettingsSection({}, { ...base, setSource: hooks.setSource, onChange: hooks.onChange }) }).toThrow('neither installSection')
+  it('fails loud when neither the service method nor the module function exists', () => {
+    const saved = dshSettings['installSettingsSection']
+    delete dshSettings['installSettingsSection']
+    try {
+      expect(() => { assembleSettingsSection({}, { ...base, setSource: hooks.setSource, onChange: hooks.onChange }) }).toThrow('neither service.installSection')
+    } finally {
+      if (saved !== undefined) dshSettings['installSettingsSection'] = saved
+    }
   })
 
-  it('prefers the NEW-era method when both exist (forward-correct under mixed closure)', () => {
+  it('prefers the service method when both surfaces exist (the running closure decides, not the export list)', () => {
     const calls: string[] = []
-    const service = {
-      installSection: () => { calls.push('new') },
-      installSettingsSection: () => { calls.push('old') },
+    const service = { installSection: () => { calls.push('svc') } }
+    const saved = dshSettings['installSettingsSection']
+    dshSettings['installSettingsSection'] = () => { calls.push('module') }
+    try {
+      assembleSettingsSection(service, { ...base, setSource: hooks.setSource, onChange: hooks.onChange })
+    } finally {
+      if (saved === undefined) delete dshSettings['installSettingsSection']
+      else dshSettings['installSettingsSection'] = saved
     }
-    assembleSettingsSection(service, { ...base, setSource: hooks.setSource, onChange: hooks.onChange })
-    expect(calls).toEqual(['new'])
+    expect(calls).toEqual(['svc'])
   })
 })
