@@ -84,18 +84,34 @@ describe('credentials', () => {
     await expect(writeCredential(dir, DEFAULT_API_KEY_ENV, 'sk')).rejects.toThrow()
   })
 
-  it('upgrades a pre-release flat document in place, keeping every entry and comment', async () => {
+  it('keeps a flat document flat on write — the common denominator both dsh eras read', async () => {
     const path = pathOf('credentials.yaml')
     await writeFile(path, '# keep me\nOTHER_KEY: sk-other\nSILICONFLOW_API_KEY: sk-flat\n')
     await expect(readCredential(path, DEFAULT_API_KEY_ENV)).resolves.toBe('sk-flat')
     await writeCredential(path, DEFAULT_API_KEY_ENV, 'sk-new')
     const text = await readFile(path, 'utf8')
-    expect(text).toContain('version: 1')
+    // Flat stays flat: OLD-era credentials-local reads it natively; a NEW-era
+    // dsh migrates it to version-1 on its next boot. This write never picks a
+    // layout one era cannot read.
+    expect(text).not.toContain('version:')
+    expect(text).not.toContain('refs:')
     expect(text).toContain('# keep me')
     expect(text).toContain('OTHER_KEY: sk-other')
+    expect(text).toContain('SILICONFLOW_API_KEY: sk-new')
     await expect(readCredential(path, DEFAULT_API_KEY_ENV)).resolves.toBe('sk-new')
     await expect(readCredential(path, 'OTHER_KEY')).resolves.toBe('sk-other')
-    expect(text.indexOf('version: 1')).toBeLessThan(text.indexOf('refs:'))
+  })
+
+  it('an existing version-1 document stays version-1 on write — a new-era user is never downgraded', async () => {
+    const path = pathOf('credentials.yaml')
+    await writeFile(path, 'version: 1\nrefs:\n  OTHER_KEY: sk-other\n')
+    await writeCredential(path, DEFAULT_API_KEY_ENV, 'sk-new')
+    const text = await readFile(path, 'utf8')
+    expect(text).toContain('version: 1')
+    expect(text).toContain('refs:')
+    expect(text).toContain('OTHER_KEY: sk-other')
+    expect(text).toContain('SILICONFLOW_API_KEY: sk-new')
+    await expect(readCredential(path, DEFAULT_API_KEY_ENV)).resolves.toBe('sk-new')
   })
 
   it('reads a versioned document, its other refs, and a records-only document', async () => {
