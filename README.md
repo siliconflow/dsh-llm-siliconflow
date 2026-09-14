@@ -1,12 +1,12 @@
 # @siliconflow-official/dsh-llm-siliconflow
 
-面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) LLM 接缝的 SiliconFlow chat-completions 适配器插件：用直接 `fetch` + SSE（由 `eventsource-parser` 分帧）把 SiliconFlow 的 OpenAI 兼容线上格式翻译成 `StreamChunk` 协议。SiliconFlow 托管着广泛的开源模型目录，其中包含 delta 携带 `reasoning_content` 的推理模型（DeepSeek-R1、QwQ、Kimi-K2-Thinking）——适配器把该通道翻译成 harness reasoning 块，并在工具调用轮次按这些模型的要求将其回传。同时支持视觉语言模型（VLM）：当 harness 挂载了附件存储服务（`ctx.attachments`）时，用户消息中的图片块会被解析为 base64 data URL 并序列化为 OpenAI 兼容的 `image_url` 多模态内容部分。
+面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) LLM 接缝的 SiliconFlow chat-completions 适配器插件：用直接 `fetch` + SSE（由 `eventsource-parser` 分帧）把 SiliconFlow 的 OpenAI 兼容线上格式翻译成 `StreamChunk` 协议。SiliconFlow 托管着广泛的开源模型目录，其中包含 delta 携带 `reasoning_content` 的推理模型（如 DeepSeek-R1 系列：DeepSeek-R1、Pro/DeepSeek-R1、DeepSeek-R1-0528-Qwen3-8B）——适配器把该通道翻译成 harness reasoning 块，并在工具调用轮次按这些模型的要求将其回传。推理模型以目录 id 识别，具体型号随 SiliconFlow 模型广场上下架轮换。同时支持视觉语言模型（VLM）：当 harness 挂载了附件存储服务（`ctx.attachments`）时，用户消息中的图片块会被解析为 base64 data URL 并序列化为 OpenAI 兼容的 `image_url` 多模态内容部分。
 
 本包拥有 `siliconflow` 提供方路由，因此部署只需提供一个 SiliconFlow API key 即可使用。其模型选择器从实时 `GET /models?sub_type=chat` 列表按端点顺序填充；配置的 `models` 列表是在没有 key 或发现失败时展示的回退目录。这是一个纯 OpenAI 兼容端点，没有 `thinking`/`reasoning_effort` 开关，因此适配器不暴露任何推理档位元数据、也不序列化任何推理档位字段：推理模型通过其目录 id 选择，请求上显式指定 `reasoningEffort` 会在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 被拒绝。为 `siliconflow` 注册另一个适配器会抛出 `LlmError('DUPLICATE_ADAPTER')`。
 
 包根导出 Cordis 插件契约与 `SiliconFlowAdapter`；线上序列化、SSE 解析、chunk 翻译与发现辅助函数不属于该根契约。
 
-本项目由 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 dsh agent 开发完成——实现、单元测试与覆盖率、工程化质量门禁、GitHub 仓库与 CI、文档，均在一个 dsh 会话内完成。
+本项目由 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 dsh agent 开发并持续维护——初始实现（含测试、覆盖率与 CI 门禁）之后，又经多轮会话迭代出跨 dsh 代际兼容（0.2.0 系列）。
 
 ## 安装
 
@@ -52,7 +52,7 @@ refs:
   SILICONFLOW_API_KEY: sk-...
 ```
 
-在包发布到 npm 之前，先用 `pnpm install && pnpm build` 构建出 `lib/`，再从本地路径安装：
+要跟进未发布的本地改动，先用 `pnpm install && pnpm run build` 构建出 `lib/`，再从本地路径安装：
 
 ```sh
 dsh plugin --profile <name> add /path/to/dsh-llm-siliconflow
