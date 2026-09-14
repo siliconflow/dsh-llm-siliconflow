@@ -9,10 +9,11 @@
  * @module dsh-llm-siliconflow/translate
  */
 
-import { EMPTY_RESPONSE_CODE, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { DONE } from './sse.ts'
 import type { WireChunk, WireUsage } from './types.ts'
+import { toolCallIdOf } from './dsh-era.ts'
 
 /** One open block under assembly. */
 interface OpenBlock {
@@ -69,7 +70,7 @@ function closeBlock(block: OpenBlock): ContentBlock {
     case 'reasoning': return { type: 'reasoning', text: block.text }
     case 'tool-call': return {
       type: 'tool-call',
-      id: ToolCallId(block.callId ?? ''),
+      id: toolCallIdOf(block.callId ?? ''),
       name: block.name ?? '',
       arguments: block.text,
     }
@@ -167,7 +168,7 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
         yield {
           type: 'tool-call-delta',
           index: block.index,
-          id: ToolCallId(block.callId ?? ''),
+          id: toolCallIdOf(block.callId ?? ''),
           ...block.name !== undefined ? { name: block.name } : {},
           argumentsDelta: fragment,
         }

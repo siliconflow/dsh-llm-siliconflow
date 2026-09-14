@@ -34,11 +34,21 @@ dsh-siliconflow-setup
 export SILICONFLOW_API_KEY=sk-...   # 或写入 $DSH_HOME/.credentials.yaml
 ```
 
-写入 `.credentials.yaml` 时使用 dsh ≥ 0.1.2 的 version-1 布局（`version: 1` + `refs:` 嵌套）；向导会识别并就地升级本向导早期版本写入的 pre-release 顶层扁平布局，其他无法识别的文档会明确报错而不是被改写：
+写入 `.credentials.yaml` 采用**跨代兼容规则**（单一构建同时服务新旧两代 dsh）：
+
+- **新文件 / 扁平（无 `version`）文件 → 保持扁平写入**：旧代 dsh（credentials-local 0.1.0）原生可读；新代 dsh 会在下次启动时自动迁移为 `version: 1`。
+- **已是 `version: 1` 的文件 → 保持 version-1 写入**：新代用户永不降级；新旧两代读路径都识别这两种布局。
+- 其他无法识别的文档（未知键、非法结构）会明确报错而不是被改写；早期版本向导误写的顶层键会在写入时折回 `refs:`。
 
 ```yaml
+# 向导写出的新文件（扁平，两代公共分母）：
+OTHER_KEY: sk-...
+SILICONFLOW_API_KEY: sk-...
+
+# 新代 dsh 首次启动后自动迁移为：
 version: 1
 refs:
+  OTHER_KEY: sk-...
   SILICONFLOW_API_KEY: sk-...
 ```
 

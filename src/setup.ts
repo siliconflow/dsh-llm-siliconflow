@@ -14,7 +14,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { Pair, parseDocument, YAMLMap } from 'yaml'
+import { parseDocument } from 'yaml'
 import type { SiliconFlowListingEntry } from './discovery.ts'
 import { DEFAULT_API_KEY_ENV, DEFAULT_MODELS, PROVIDER } from './index.ts'
 
@@ -160,22 +160,6 @@ function admitCredentialsDocument(document: ParsedDocument): AdmittedCredentials
 }
 
 /**
- * Nest a pre-release flat document under `refs:` with a `version` stamp. The
- * whole current root — every flat entry, comments included — becomes the
- * `refs` section verbatim, so every other provider's key migrates in the same
- * write; the new root carries `version` and `refs` in that order, matching how
- * `dsh-credentials-local` writes one from scratch.
- * @param document - the admitted flat document to upgrade in place.
- */
-function upgradeFlatDocument(document: ParsedDocument): void {
-  const refs = document.contents instanceof YAMLMap ? document.contents : new YAMLMap()
-  const root = new YAMLMap()
-  root.add(new Pair('version', CREDENTIALS_LAYOUT_VERSION))
-  root.add(new Pair('refs', refs))
-  document.contents = root
-}
-
-/**
  * Read one credential reference from a versioned or pre-release flat document.
  * @param path - the credentials document path.
  * @param keyEnv - the reference name to read (e.g. `SILICONFLOW_API_KEY`).
@@ -196,10 +180,22 @@ export async function readCredential(path: string, keyEnv: string): Promise<stri
 }
 
 /**
- * Write one credential reference into the versioned layout, preserving every
- * other entry and comment. A pre-release flat document is upgraded in place,
- * and a top-level key a pre-fix release of this wizard left beside `version`
- * is folded back under `refs`, so one run repairs the file its predecessor
+ * Write one credential reference, preserving the document's own layout family
+ * and every other entry and comment.
+ *
+ * Cross-era rule (0.2.0-rc.3): which layout a FRESH document gets is decided
+ * by what both dsh eras can read, not by this build's version clock. The OLD
+ * credentials-local (0.1.0-rc.8) reads only the flat layout; the NEW one
+ * (0.1.1+) reads only version-1 but migrates a version-less flat document on
+ * its next boot. Flat is therefore the common denominator: a fresh or flat
+ * document stays flat under this write, and the running dsh upgrades it when
+ * that dsh is new-era. An existing versioned document keeps version-1 so a
+ * new-era user is never downgraded; an old-era user with a versioned document
+ * still has a file old dsh rejects — that file predates this rule and is
+ * repaired by re-running setup on a flat base or by hand.
+ *
+ * A top-level key a pre-fix release of this wizard left beside `version` is
+ * folded back under `refs`, so one run repairs the file its predecessor
  * corrupted. An unrecognized document fails loud instead of being rewritten —
  * a silent rewrite would hide why the running harness rejects it.
  * @param path - the credentials document path; created when absent.
@@ -216,11 +212,17 @@ export async function writeCredential(path: string, keyEnv: string, key: string)
       + ' (expected version 1 with a refs section, or the pre-release flat layout); fix it before running setup',
     )
   }
-  if (admitted.kind === 'flat') upgradeFlatDocument(doc)
-  // Fold each recognized own-artifact top-level key into `refs`, where the
-  // version-1 layout can address it and the next dsh boot accepts the document
-  // again; remove it from the top level first so the file is left with one
-  // layout, not a hybrid.
+  if (admitted.kind === 'flat') {
+    // Fresh/flat stays flat: both eras can read it, and a new-era dsh migrates
+    // it to version-1 on its next boot — this write never forecloses either era.
+    doc.setIn([keyEnv], key)
+    await persistDocument(path, doc)
+    return
+  }
+  // Versioned family: fold each recognized own-artifact top-level key into
+  // `refs`, where the version-1 layout can address it and the next dsh boot
+  // accepts the document again; remove it from the top level first so the
+  // file is left with one layout, not a hybrid.
   for (const extra of admitted.extraKeys?.keys() ?? []) doc.deleteIn([extra])
   // Restore each folded key under `refs` first, so this write's own entry —
   // which may be the same reference the predecessor corrupted — lands last and
